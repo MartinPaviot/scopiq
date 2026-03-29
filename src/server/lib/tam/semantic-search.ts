@@ -1,5 +1,5 @@
 /**
- * TAM Semantic Search — NL queries over TamAccounts.
+ * TAM Semantic Search -- NL queries over TamAccounts.
  *
  * Architecture:
  * - Embeddings generated via Mistral Embed (mistral-embed model)
@@ -15,7 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { logger } from "@/lib/logger";
 
-// ─── Mistral Embed Client ───────────────────────────────
+// --- Mistral Embed Client ---
 
 function getMistralClient(): Mistral {
   const apiKey = process.env.MISTRAL_API_KEY;
@@ -60,12 +60,8 @@ function accountToText(account: {
   return parts.join(" | ");
 }
 
-// ─── Embedding Generation (batch) ───────────────────────
+// --- Embedding Generation (batch) ---
 
-/**
- * Generate and store embeddings for all TamAccounts in a build.
- * Processes in batches of 50 (Mistral embed limit).
- */
 export async function generateAccountEmbeddings(
   tamBuildId: string,
 ): Promise<number> {
@@ -118,7 +114,7 @@ export async function generateAccountEmbeddings(
   return embedded;
 }
 
-// ─── Cosine Similarity ──────────────────────────────────
+// --- Cosine Similarity ---
 
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
@@ -133,7 +129,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-// ─── Search ─────────────────────────────────────────────
+// --- Search ---
 
 export interface SemanticSearchResult {
   accountId: string;
@@ -145,20 +141,11 @@ export interface SemanticSearchResult {
   similarity: number;
 }
 
-/**
- * Semantic search over TamAccounts using NL query.
- *
- * 1. Generate embedding for query text
- * 2. Load all account embeddings for the workspace
- * 3. Compute cosine similarity
- * 4. Return top-N results
- */
 export async function semanticSearchTam(
   workspaceId: string,
   query: string,
   topN = 20,
 ): Promise<SemanticSearchResult[]> {
-  // Get latest build
   const latestBuild = await prisma.tamBuild.findFirst({
     where: { workspaceId, status: "complete" },
     orderBy: { createdAt: "desc" },
@@ -167,10 +154,8 @@ export async function semanticSearchTam(
 
   if (!latestBuild) return [];
 
-  // Generate query embedding
   const [queryEmbedding] = await generateEmbeddings([query]);
 
-  // Load accounts with embeddings
   const accounts = await prisma.tamAccount.findMany({
     where: {
       tamBuildId: latestBuild.id,
@@ -189,7 +174,6 @@ export async function semanticSearchTam(
 
   if (accounts.length === 0) return [];
 
-  // Compute similarity scores
   const scored = accounts.map((account) => ({
     accountId: account.id,
     name: account.name,
@@ -200,7 +184,6 @@ export async function semanticSearchTam(
     similarity: cosineSimilarity(queryEmbedding, account.embedding as number[]),
   }));
 
-  // Sort by similarity and return top N
   scored.sort((a, b) => b.similarity - a.similarity);
   return scored.slice(0, topN).filter((s) => s.similarity > 0.3);
 }

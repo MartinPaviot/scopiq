@@ -1,5 +1,5 @@
 /**
- * TAM Engine — ICP Inference from Company DNA.
+ * TAM Engine -- ICP Inference from Company DNA.
  *
  * Uses Mistral Large to infer a structured ICP from the workspace's Company DNA.
  * Output is used by count-tam (Apollo queries) and score-leads (tier assignment).
@@ -9,7 +9,7 @@ import { z } from "zod/v4";
 import { mistralClient } from "@/server/lib/llm/mistral-client";
 import type { CompanyDna } from "@/server/lib/enrichment/company-analyzer";
 
-// ─── Schema ──────────────────────────────────────────────
+// --- Schema ---
 
 const icpRoleSchema = z.object({
   title: z.string(),
@@ -42,9 +42,9 @@ const inferredIcpSchema = z.object({
 export type InferredICP = z.infer<typeof inferredIcpSchema>;
 export type ICPRole = z.infer<typeof icpRoleSchema>;
 
-// ─── System Prompt ───────────────────────────────────────
+// --- System Prompt ---
 
-const INFER_ICP_SYSTEM = `You are an expert B2B sales strategist. Given a Company DNA (what a company sells, to whom, and why), you infer the Ideal Customer Profile (ICP) — the types of people and companies most likely to buy.
+const INFER_ICP_SYSTEM = `You are an expert B2B sales strategist. Given a Company DNA (what a company sells, to whom, and why), you infer the Ideal Customer Profile (ICP) -- the types of people and companies most likely to buy.
 
 Return a JSON object with:
 {
@@ -60,16 +60,16 @@ Return a JSON object with:
 }
 
 RULES:
-- Infer roles from targetBuyers — expand with title variations and seniority levels
+- Infer roles from targetBuyers -- expand with title variations and seniority levels
 - Infer industries from socialProof industries + clientPortfolio
 - Infer company size from socialProof companySize distribution
 - Infer geography from clientPortfolio patterns or default to US/UK/Canada
 - Identify 3-5 buying signals that indicate purchase readiness
-- Be specific and actionable — these will become Apollo search filters
+- Be specific and actionable -- these will become Apollo search filters
 - If clientPortfolio is empty, use problemsSolved to infer likely industries
 - JSON only, no markdown.`;
 
-// ─── Main Function ───────────────────────────────────────
+// --- Main Function ---
 
 export async function inferICP(
   companyDna: CompanyDna,
@@ -88,7 +88,7 @@ export async function inferICP(
   });
 }
 
-// ─── Helpers ─────────────────────────────────────────────
+// --- Helpers ---
 
 function buildDnaContext(dna: CompanyDna): string {
   const sections: string[] = [];

@@ -1,5 +1,5 @@
 /**
- * TAM Quality Validator — Post-build sanity check via LLM.
+ * TAM Quality Validator -- Post-build sanity check via LLM.
  *
  * After the TAM is built and scored, this function validates
  * that the results make sense. It catches:
@@ -15,7 +15,7 @@ import { mistralClient } from "@/server/lib/llm/mistral-client";
 import { z } from "zod/v4";
 import { logger } from "@/lib/logger";
 
-// ─── Types ──────────────────────────────────────────────
+// --- Types ---
 
 const qualityReportSchema = z.object({
   overall_score: z.number().min(0).max(10),
@@ -35,28 +35,24 @@ const qualityReportSchema = z.object({
 
 export type QualityReport = z.infer<typeof qualityReportSchema>;
 
-// ─── System Prompt ──────────────────────────────────────
+// --- System Prompt ---
 
 const VALIDATE_SYSTEM = `You are an expert in sales intelligence and TAM analysis. You just built a TAM (Total Addressable Market) for a company. Verify that the results are coherent.
 
 Evaluate on 5 criteria (score 1-10 each):
 
 1. TAM SIZE: Is the total number realistic for this product?
-   Niche tool → 2K-20K accounts. Horizontal tool → 20K-200K accounts.
+   Niche tool -> 2K-20K accounts. Horizontal tool -> 20K-200K accounts.
    >500K = probably too broad. <500 = probably too narrow.
 
 2. TIER A RELEVANCE: Are the top 10 Tier A plausible customers?
-   A Tier A for Lemlist should be a SaaS startup of 50 people, not Microsoft.
-   A Tier A for Salesforce should be a 500+ company, not a freelancer.
 
 3. DISTRIBUTION: Is the Tier A/B/C/D distribution healthy?
    Ideal: A=5-15%, B=15-30%, C=30-40%, D=20-30%
-   A>30% = scoring too lax. A<2% = scoring too strict.
 
 4. INDUSTRY COHERENCE: Do the dominant industries match the product?
 
 5. ANOMALIES: Any obvious aberrations?
-   Restaurants in a SaaS TAM? 50K employee companies in an SMB TAM?
 
 Return ONLY valid JSON:
 {
@@ -74,7 +70,7 @@ Return ONLY valid JSON:
   "suggestions": ["..."]
 }`;
 
-// ─── Main Function ──────────────────────────────────────
+// --- Main Function ---
 
 export interface ValidationInput {
   siteUrl: string;
@@ -112,7 +108,7 @@ TAM Results:
   Tier D: ${input.tierCounts.D} (${tierPcts.D}%)
 
 Top 10 Tier A:
-${input.topTierA.slice(0, 10).map((a, i) => `  ${i + 1}. ${a.name} — ${a.industry ?? "unknown"} — ${a.employeeCount?.toLocaleString() ?? "?"} employees`).join("\n")}
+${input.topTierA.slice(0, 10).map((a, i) => `  ${i + 1}. ${a.name} -- ${a.industry ?? "unknown"} -- ${a.employeeCount?.toLocaleString() ?? "?"} employees`).join("\n")}
 
 Industry distribution:
 ${input.industryBreakdown.slice(0, 8).map((i) => `  ${i.name}: ${i.count}`).join("\n")}
@@ -149,17 +145,16 @@ ${input.geoBreakdown.slice(0, 5).map((g) => `  ${g.name}: ${g.count}`).join("\n"
       error: err instanceof Error ? err.message : String(err),
     });
 
-    // Return a neutral report on failure — don't block the build
     return {
       overall_score: 5,
       scores: {
-        tam_size: { score: 5, comment: "Validation skipped — LLM call failed" },
+        tam_size: { score: 5, comment: "Validation skipped -- LLM call failed" },
         tier_a_relevance: { score: 5, comment: "Not validated" },
         distribution: { score: 5, comment: "Not validated" },
         industry_coherence: { score: 5, comment: "Not validated" },
         anomalies: { score: 5, comment: "Not validated" },
       },
-      issues: [{ severity: "low", description: "Quality validation could not complete — results not verified" }],
+      issues: [{ severity: "low", description: "Quality validation could not complete -- results not verified" }],
       suggestions: [],
     };
   }

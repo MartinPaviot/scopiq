@@ -1,0 +1,343 @@
+"use client";
+
+import { useRef, useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  MagnifyingGlass, Fire, Thermometer, Snowflake,
+  Buildings, MapPin, Users, CaretDown, CaretUp,
+  Export, ArrowsClockwise, Target, Funnel, Lightning,
+} from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc-client";
+
+// ─── Constants ────────────────────────────────────
+
+const ROW_HEIGHT = 36;
+const PAGE_SIZE = 50;
+const POLL_INTERVAL_MS = 3000;
+
+const TIER_COLORS: Record<string, string> = {
+  A: "bg-emerald-500", B: "bg-blue-500", C: "bg-amber-500", D: "bg-slate-400",
+};
+
+const HEAT_COLORS: Record<string, string> = {
+  Burning: "text-orange-500", Hot: "text-rose-500", Warm: "text-amber-500", Cold: "text-slate-400",
+};
+
+// ─── Helpers ──────────────────────────────────────
+
+function formatEmployees(n: number | null | undefined): string {
+  if (!n) return "—";
+  if (n >= 10_000) return `${(n / 1_000).toFixed(0)}K`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function HeatIcon({ heat }: { heat: string | null }) {
+  const cls = "size-3";
+  switch (heat) {
+    case "Burning": case "Hot": return <Fire weight="fill" className={cls} />;
+    case "Warm": return <Thermometer weight="fill" className={cls} />;
+    default: return <Snowflake weight="fill" className={cls} />;
+  }
+}
+
+const AVATAR_COLORS = [
+  "bg-teal-500", "bg-blue-500", "bg-orange-500", "bg-rose-500",
+  "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-indigo-500",
+];
+
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i);
+  return Math.abs(h);
+}
+
+function CompanyIcon({ name, domain }: { name: string; domain?: string | null }) {
+  const [useFallback, setUseFallback] = useState(false);
+  const letter = (name || "?")[0]?.toUpperCase() ?? "?";
+  const color = AVATAR_COLORS[hashStr(name || "?") % AVATAR_COLORS.length];
+  const guessedDomain = domain || `${name.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`;
+
+  if (useFallback) {
+    return (
+      <div className={cn("size-6 rounded flex items-center justify-center text-white text-[10px] font-bold shrink-0", color)}>
+        {letter}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(guessedDomain)}&sz=64`}
+      className="size-6 rounded object-contain bg-white border border-border/30 shrink-0"
+      loading="lazy"
+      onError={() => setUseFallback(true)}
+      alt=""
+    />
+  );
+}
+
+// ─── Page ─────────────────────────────────────────
+
+export default function MarketPage() {
+  const router = useRouter();
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const [search, setSearch] = useState("");
+  const [tierFilter, setTierFilter] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState("heatScore");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Load latest build
+  const buildQuery = trpc.tam.getLatestBuild.useQuery();
+  const build = buildQuery.data;
+  const tamBuildId = build?.id;
+  const isBuilding = build?.status !== "complete" && build?.status !== "failed" && !!build;
+
+  // Poll during build
+  const buildPoll = trpc.tam.getBuildStatus.useQuery(
+    { tamBuildId: tamBuildId ?? "" },
+    { enabled: !!tamBuildId && isBuilding, refetchInterval: POLL_INTERVAL_MS },
+  );
+
+  // Load accounts
+  const accountsQuery = trpc.tam.getAccounts.useQuery(
+    {
+      tamBuildId: tamBuildId ?? "",
+      offset: 0,
+      limit: 200,
+      tier: tierFilter.length > 0 ? tierFilter : undefined,
+      search: search || undefined,
+      sortBy,
+      sortOrder,
+    },
+    { enabled: !!tamBuildId },
+  );
+
+  const accounts = accountsQuery.data?.accounts ?? [];
+  const totalFiltered = accountsQuery.data?.totalFiltered ?? 0;
+
+  // Virtual scrolling
+  const rowVirtualizer = useVirtualizer({
+    count: accounts.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
+
+  const toggleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
+    }
+  };
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortBy !== field) return null;
+    return sortOrder === "desc"
+      ? <CaretDown className="size-2.5" />
+      : <CaretUp className="size-2.5" />;
+  };
+
+  // No build state
+  if (!build) {
+    if (buildQuery.isLoading) {
+      return (
+        <div className="flex items-center justify-center h-screen">
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <Buildings className="size-12 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No TAM built yet</p>
+        <Button onClick={() => router.push("/icp")}>Define ICP first</Button>
+      </div>
+    );
+  }
+
+  // Building state
+  if (isBuilding) {
+    const phase = buildPoll.data?.phase ?? build.phase;
+    const loaded = buildPoll.data?.loadedCount ?? build.loadedCount;
+    const total = buildPoll.data?.totalCount ?? build.totalCount;
+    const scored = buildPoll.data?.scoredCount ?? build.scoredCount;
+
+    return (
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <ArrowsClockwise className="size-8 text-primary animate-spin" />
+        <div className="text-center">
+          <p className="text-sm font-medium text-foreground">Building your TAM</p>
+          <p className="text-xs text-muted-foreground mt-1 capitalize">{phase?.replace(/-/g, " ")}...</p>
+          {total && total > 0 && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {loaded}/{total} accounts loaded · {scored} scored
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen">
+      {/* Toolbar */}
+      <div className="border-b px-4 py-2 flex items-center gap-3 shrink-0 bg-card">
+        <div className="relative flex-1 max-w-md">
+          <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            placeholder='Search accounts... try "hiring tier a" or "funded startups"'
+            className="pl-8 h-8 text-xs"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Tier filter pills */}
+        <div className="flex gap-1">
+          {["A", "B", "C", "D"].map((tier) => (
+            <button
+              key={tier}
+              onClick={() =>
+                setTierFilter((prev) =>
+                  prev.includes(tier) ? prev.filter((t) => t !== tier) : [...prev, tier],
+                )
+              }
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors border",
+                tierFilter.includes(tier)
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-transparent text-muted-foreground border-border hover:border-foreground/30",
+              )}
+            >
+              <span className={cn("size-2 rounded-full", TIER_COLORS[tier])} />
+              {tier}
+            </button>
+          ))}
+        </div>
+
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {totalFiltered.toLocaleString()} accounts
+        </span>
+
+        <Button variant="ghost" size="sm" className="text-xs h-7 gap-1 px-2 ml-auto">
+          <Export className="size-3" />
+          Export
+        </Button>
+      </div>
+
+      {/* Table Header */}
+      <div className="grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b bg-muted/30 shrink-0">
+        <button className="text-left flex items-center gap-1" onClick={() => toggleSort("name")}>
+          Company <SortIcon field="name" />
+        </button>
+        <button className="text-left flex items-center gap-1" onClick={() => toggleSort("industry")}>
+          Industry <SortIcon field="industry" />
+        </button>
+        <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("employeeCount")}>
+          Size <SortIcon field="employeeCount" />
+        </button>
+        <span>Location</span>
+        <button className="text-center flex items-center gap-1 justify-center" onClick={() => toggleSort("tier")}>
+          Tier <SortIcon field="tier" />
+        </button>
+        <span className="text-center">Heat</span>
+        <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("heatScore")}>
+          Score <SortIcon field="heatScore" />
+        </button>
+        <span className="text-center">Sig</span>
+      </div>
+
+      {/* Virtual Scrolled Rows */}
+      <div ref={parentRef} className="flex-1 overflow-auto scrollbar-thin">
+        <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const account = accounts[virtualRow.index];
+            if (!account) return null;
+
+            const signalCount = [
+              account.hiringSignal, account.fundedSignal, account.keywordMatch,
+            ].filter(Boolean).length;
+
+            return (
+              <div
+                key={account.id}
+                className="absolute inset-x-0 grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 items-center row-hover cursor-pointer border-b border-border/30"
+                style={{
+                  height: `${ROW_HEIGHT}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {/* Company */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <CompanyIcon name={account.name} domain={account.domain} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-foreground truncate">{account.name}</p>
+                    {account.domain && (
+                      <p className="text-[10px] text-muted-foreground truncate">{account.domain}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Industry */}
+                <span className="text-[11px] text-muted-foreground truncate">{account.industry ?? "—"}</span>
+
+                {/* Size */}
+                <span className="text-[11px] text-muted-foreground text-right tabular-nums">
+                  {formatEmployees(account.employeeCount)}
+                </span>
+
+                {/* Location */}
+                <span className="text-[10px] text-muted-foreground truncate">
+                  {[account.city, account.country].filter(Boolean).join(", ") || "—"}
+                </span>
+
+                {/* Tier */}
+                <div className="flex justify-center">
+                  {account.tier && (
+                    <span className={cn(
+                      "size-5 rounded text-white text-[9px] font-bold flex items-center justify-center",
+                      TIER_COLORS[account.tier] ?? "bg-slate-400",
+                    )}>
+                      {account.tier}
+                    </span>
+                  )}
+                </div>
+
+                {/* Heat */}
+                <div className="flex items-center justify-center gap-0.5">
+                  <span className={HEAT_COLORS[account.heat ?? ""] ?? "text-slate-400"}>
+                    <HeatIcon heat={account.heat ?? null} />
+                  </span>
+                </div>
+
+                {/* Score */}
+                <span className="text-[11px] text-right tabular-nums font-medium text-foreground">
+                  {account.heatScore}
+                </span>
+
+                {/* Signals */}
+                <div className="flex justify-center">
+                  {signalCount > 0 && (
+                    <span className="flex items-center gap-0.5 text-[9px] text-amber-600">
+                      <Lightning className="size-3" weight="fill" />
+                      {signalCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

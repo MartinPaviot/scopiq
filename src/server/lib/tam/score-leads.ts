@@ -1,5 +1,5 @@
 /**
- * TAM Engine — Dual-Dimension Scoring (Tier + Heat).
+ * TAM Engine -- Dual-Dimension Scoring (Tier + Heat).
  *
  * Tier = ICP Fit (deterministic from Apollo data vs ICP)
  * Heat = Signal intensity (from detect-signals)
@@ -9,13 +9,12 @@ import type { InferredICP } from "./infer-icp";
 import type { SignalResult } from "./detect-signals";
 import type { NegativeIcp } from "@/server/lib/icp/icp-schema";
 
-// ─── Types ───────────────────────────────────────────────
+// --- Types ---
 
 export type TierGrade = "A" | "B" | "C" | "D";
 export type HeatLevel = "Burning" | "Hot" | "Warm" | "Cold";
 
 export interface ScoredLead {
-  /** Apollo search data */
   firstName?: string;
   lastName?: string;
   title?: string;
@@ -25,7 +24,6 @@ export interface ScoredLead {
   employeeCount?: number;
   country?: string;
   linkedinUrl?: string;
-  /** Scoring */
   tier: TierGrade;
   tierLabel: string;
   tierReasons: string[];
@@ -40,7 +38,7 @@ export interface ScoredLead {
   numericScore: number;
 }
 
-// ─── Lead Input ──────────────────────────────────────────
+// --- Lead Input ---
 
 export interface LeadInput {
   firstName?: string;
@@ -54,14 +52,13 @@ export interface LeadInput {
   linkedinUrl?: string;
 }
 
-// ─── Tier Assignment (Fit) ───────────────────────────────
+// --- Tier Assignment (Fit) ---
 
 function computeTier(
   lead: LeadInput,
   icp: InferredICP,
   negativeIcp?: NegativeIcp | null,
 ): { tier: TierGrade; tierLabel: string; tierReasons: string[]; matchCount: number } {
-  // Check negative ICP disqualifiers
   if (negativeIcp) {
     if (lead.title) {
       const titleLower = lead.title.toLowerCase();
@@ -96,7 +93,6 @@ function computeTier(
   const reasons: string[] = [];
   let matches = 0;
 
-  // 1. Title match
   const titleMatch = checkTitleMatch(lead.title, icp);
   if (titleMatch) {
     matches++;
@@ -105,7 +101,6 @@ function computeTier(
     reasons.push(`Title "${lead.title}" doesn't match ICP roles`);
   }
 
-  // 2. Company size match
   const sizeMatch = checkSizeMatch(lead.employeeCount, icp);
   if (sizeMatch) {
     matches++;
@@ -114,7 +109,6 @@ function computeTier(
     reasons.push(`Company size ${lead.employeeCount} outside ICP range`);
   }
 
-  // 3. Industry match
   const industryMatch = checkIndustryMatch(lead.industry, icp);
   if (industryMatch) {
     matches++;
@@ -123,7 +117,6 @@ function computeTier(
     reasons.push(`Industry "${lead.industry}" not in ICP industries`);
   }
 
-  // 4. Geography match
   const geoMatch = checkGeoMatch(lead.country, icp);
   if (geoMatch) {
     matches++;
@@ -152,9 +145,8 @@ const TIER_LABELS: Record<TierGrade, string> = {
   D: "Weak Fit",
 };
 
-// ─── Heat Assignment (Weighted Signals) ─────────────────
+// --- Heat Assignment (Weighted Signals) ---
 
-/** Signal weights: relational signals > intent signals > base signals */
 const SIGNAL_WEIGHTS: Record<string, number> = {
   "Common Investor": 1.5,
   "LinkedIn Connection": 2,
@@ -171,7 +163,6 @@ function computeHeat(
   const detected = signals.filter((s) => s.detected);
   const reasons = detected.map((s) => s.evidence || s.name);
 
-  // Weighted heat score
   const weightedScore = detected.reduce((sum, s) => {
     return sum + (SIGNAL_WEIGHTS[s.name] ?? 1);
   }, 0);
@@ -196,46 +187,45 @@ const HEAT_LABELS: Record<HeatLevel, string> = {
   Cold: "No Signals",
 };
 
-// ─── Action Phrases (4×4 matrix) ─────────────────────────
+// --- Action Phrases (4x4 matrix) ---
 
 const ACTION_MATRIX: Record<TierGrade, Record<HeatLevel, string>> = {
   A: {
-    Burning: "Stellar account — take action immediately",
-    Hot: "Strong account — prioritize this week",
-    Warm: "Great fit — worth reaching out",
-    Cold: "Perfect fit but no signals yet — monitor",
+    Burning: "Stellar account -- take action immediately",
+    Hot: "Strong account -- prioritize this week",
+    Warm: "Great fit -- worth reaching out",
+    Cold: "Perfect fit but no signals yet -- monitor",
   },
   B: {
-    Burning: "Good fit with great signals — prioritize",
-    Hot: "Solid opportunity — add to sequence",
-    Warm: "Decent match — include in campaign",
-    Cold: "Good fit, needs warming — nurture",
+    Burning: "Good fit with great signals -- prioritize",
+    Hot: "Solid opportunity -- add to sequence",
+    Warm: "Decent match -- include in campaign",
+    Cold: "Good fit, needs warming -- nurture",
   },
   C: {
-    Burning: "Hot signals but moderate fit — test carefully",
-    Hot: "Some potential — lower priority",
-    Warm: "Marginal match — batch outreach only",
-    Cold: "Low priority — skip for now",
+    Burning: "Hot signals but moderate fit -- test carefully",
+    Hot: "Some potential -- lower priority",
+    Warm: "Marginal match -- batch outreach only",
+    Cold: "Low priority -- skip for now",
   },
   D: {
-    Burning: "Signals are hot but fit is weak — risky bet",
-    Hot: "Weak fit — only if capacity allows",
-    Warm: "Poor match — skip",
-    Cold: "No fit, no signals — skip",
+    Burning: "Signals are hot but fit is weak -- risky bet",
+    Hot: "Weak fit -- only if capacity allows",
+    Warm: "Poor match -- skip",
+    Cold: "No fit, no signals -- skip",
   },
 };
 
-// ─── Numeric Score ───────────────────────────────────────
+// --- Numeric Score ---
 
 const TIER_SCORES: Record<TierGrade, number> = { A: 10, B: 8, C: 5, D: 2 };
 const HEAT_SCORES: Record<HeatLevel, number> = { Burning: 10, Hot: 7, Warm: 4, Cold: 1 };
 
 function computeNumericScore(tier: TierGrade, heat: HeatLevel): number {
-  // Weighted: Tier 60%, Heat 40%
   return Math.round(TIER_SCORES[tier] * 0.6 + HEAT_SCORES[heat] * 0.4);
 }
 
-// ─── Why This Lead ───────────────────────────────────────
+// --- Why This Lead ---
 
 function buildWhyThisLead(
   lead: LeadInput,
@@ -251,7 +241,7 @@ function buildWhyThisLead(
   if (tier === "A" || tier === "B") {
     parts.push(`Their profile is a ${TIER_LABELS[tier].toLowerCase()} for your ICP.`);
   } else {
-    parts.push(`Their profile is a ${TIER_LABELS[tier].toLowerCase()} — some criteria don't match.`);
+    parts.push(`Their profile is a ${TIER_LABELS[tier].toLowerCase()} -- some criteria don't match.`);
   }
 
   if (detectedSignals.length > 0) {
@@ -261,7 +251,7 @@ function buildWhyThisLead(
   return parts.join(" ");
 }
 
-// ─── Match Helpers ───────────────────────────────────────
+// --- Match Helpers ---
 
 function checkTitleMatch(title: string | undefined, icp: InferredICP): boolean {
   if (!title) return false;
@@ -292,7 +282,7 @@ function checkIndustryMatch(industry: string | undefined, icp: InferredICP): boo
 
 function checkGeoMatch(country: string | undefined, icp: InferredICP): boolean {
   if (!country) return false;
-  if (icp.companies.geography.length === 0) return true; // No geo constraint
+  if (icp.companies.geography.length === 0) return true;
   const lower = country.toLowerCase();
   return icp.companies.geography.some((g) => {
     const gLower = g.toLowerCase();
@@ -300,7 +290,7 @@ function checkGeoMatch(country: string | undefined, icp: InferredICP): boolean {
   });
 }
 
-// ─── Main Scoring Function ───────────────────────────────
+// --- Main Scoring Function ---
 
 export function scoreLead(
   lead: LeadInput,
@@ -331,9 +321,6 @@ export function scoreLead(
   };
 }
 
-/**
- * Score multiple leads against an ICP with their detected signals.
- */
 export function scoreLeads(
   leads: Array<{ lead: LeadInput; signals: SignalResult[] }>,
   icp: InferredICP,
@@ -342,7 +329,6 @@ export function scoreLeads(
   return leads
     .map(({ lead, signals }) => scoreLead(lead, icp, signals, negativeIcp))
     .sort((a, b) => {
-      // Sort: Tier ASC (A < B < C < D), Heat DESC (Burning > Hot > Warm > Cold)
       const tierOrder = { A: 0, B: 1, C: 2, D: 3 };
       const heatOrder = { Burning: 0, Hot: 1, Warm: 2, Cold: 3 };
       const tierDiff = tierOrder[a.tier] - tierOrder[b.tier];
