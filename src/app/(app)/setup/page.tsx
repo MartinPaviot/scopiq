@@ -652,7 +652,7 @@ export default function SetupPage() {
             </TierSection>
 
             {/* TIER 2 */}
-            <TierSection title="Tell us about your target" subtitle="Help the AI narrow down your ideal customer" defaultOpen={false} delay={800}>
+            <TierSection title="Tell us about your target" subtitle="Help the AI narrow down your ideal customer" delay={800}>
               <InputCard icon={<Users className="size-5" />} label="Describe your ideal customer" hint="Be as specific as you can" complete={idealDescription.length > 20} delay={900} onRemove={idealSource ? () => { deleteMutation.mutate({ sourceId: idealSource.id }); setIdealDescription(""); } : undefined}>
                 <textarea
                   placeholder="Ex: I target Head of Sales in B2B SaaS companies, Series A-B, 50-200 employees, in Western Europe..."
@@ -673,7 +673,7 @@ export default function SetupPage() {
             </TierSection>
 
             {/* TIER 3 */}
-            <TierSection title="Power user" subtitle="More data = better ICP precision" defaultOpen={false} delay={1200}>
+            <TierSection title="Power user" subtitle="More data = better ICP precision" delay={1200}>
               <InputCard icon={<FileText className="size-5" />} label="CSV of beta users or customers" complete={csvUploaded || !!csvSource} delay={1300} onRemove={csvSource ? () => { deleteMutation.mutate({ sourceId: csvSource.id }); setCsvFileName(""); setCsvUploaded(false); } : undefined}>
                 <div
                   className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all hover:border-primary/40"
