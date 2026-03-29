@@ -53,7 +53,7 @@ function TierSection({
         />
       </button>
       {open && (
-        <div className="space-y-4 animate-fade-in-up">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in-up">
           {children}
         </div>
       )}
@@ -81,43 +81,41 @@ function InputCard({
   return (
     <div
       className={cn(
-        "hero-stagger relative rounded-2xl border bg-card/80 backdrop-blur-sm p-5 transition-all duration-300 input-glow",
+        "hero-stagger relative rounded-2xl border bg-card/80 backdrop-blur-sm p-4 transition-all duration-300 input-glow flex flex-col h-full",
         complete
           ? "border-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/10"
           : "border-border/50 hover:border-border hover:shadow-md",
       )}
       style={{ animationDelay: `${delay}ms` }}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-2.5 mb-3">
         <div
           className={cn(
-            "flex items-center justify-center size-10 rounded-xl shrink-0 transition-colors",
+            "flex items-center justify-center size-8 rounded-lg shrink-0 transition-colors",
             complete
               ? "bg-emerald-500/10 text-emerald-600"
               : "bg-muted/80 text-muted-foreground",
           )}
         >
           {complete ? (
-            <CheckCircle className="size-5 animate-check-pop" weight="fill" />
+            <CheckCircle className="size-4 animate-check-pop" weight="fill" />
           ) : (
             icon
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-foreground">{label}</h3>
-            {complete && (
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
-                Done
-              </span>
-            )}
-          </div>
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold text-foreground leading-tight">{label}</h3>
           {hint && !complete && (
-            <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{hint}</p>
           )}
-          <div className="mt-3">{children}</div>
         </div>
+        {complete && (
+          <span className="ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 shrink-0">
+            Done
+          </span>
+        )}
       </div>
+      <div className="flex-1">{children}</div>
     </div>
   );
 }
@@ -139,7 +137,7 @@ function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgres
   const currentIdx = BUILD_PHASES.findIndex((p) => p.id === currentId);
 
   return (
-    <div className="max-w-md mx-auto mt-12 hero-stagger" style={{ animationDelay: "0ms" }}>
+    <div className="max-w-lg mx-auto mt-12 hero-stagger" style={{ animationDelay: "0ms" }}>
       <div className="rounded-2xl border bg-card/80 backdrop-blur-sm p-8 glow-teal">
         <div className="flex items-center gap-3 mb-6">
           <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center animate-pulse-ring">
@@ -335,7 +333,7 @@ export default function SetupPage() {
 
       <div className="relative">
         {/* Hero Header */}
-        <div className="max-w-2xl mx-auto px-6 pt-16 pb-8 text-center">
+        <div className="max-w-5xl mx-auto px-6 pt-16 pb-8 text-center">
           <div className="hero-stagger" style={{ animationDelay: "0ms" }}>
             <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/60 backdrop-blur-sm px-4 py-1.5 text-sm text-muted-foreground mb-6">
               <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -353,7 +351,7 @@ export default function SetupPage() {
           </h1>
 
           <p
-            className="hero-stagger text-base text-muted-foreground max-w-md mx-auto"
+            className="hero-stagger text-base text-muted-foreground max-w-lg mx-auto"
             style={{ animationDelay: "200ms" }}
           >
             The more you share, the more precise your ICP and TAM will be.
@@ -380,7 +378,7 @@ export default function SetupPage() {
         {isGenerating ? (
           <ProgressPanel icpPhase={icpPhase} tamProgress={tamProgress} />
         ) : (
-          <div className="max-w-2xl mx-auto px-6 pb-16 space-y-8">
+          <div className="max-w-5xl mx-auto px-6 pb-16 space-y-8">
             {/* TIER 1 */}
             <TierSection title="The essentials" subtitle="What every founder has, even in stealth" delay={400}>
               <InputCard icon={<Globe className="size-5" />} label="Website or landing page" hint="Notion page, Carrd, anything works" complete={hasWebsite} delay={500}>
@@ -403,7 +401,7 @@ export default function SetupPage() {
 
               <InputCard icon={<FileText className="size-5" />} label="Pitch deck or one-pager" hint="PDF, PPTX, or DOCX — drag and drop" complete={sources.some((s) => s.type === "document" && s.status === "complete")} delay={700}>
                 <div
-                  className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all hover:border-primary/40 hover:bg-primary/[0.02] active:scale-[0.99]"
+                  className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all hover:border-primary/40 hover:bg-primary/[0.02] active:scale-[0.99]"
                   onClick={() => {
                     const input = document.createElement("input");
                     input.type = "file";
