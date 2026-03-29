@@ -1,0 +1,502 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth (Better Auth) ────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  emailVerified Boolean   @default(false)
+  image         String?
+  workspaceId   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  workspace     Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// ─── Workspace ─────────────────────────────────
+
+model Workspace {
+  id         String   @id @default(cuid())
+  name       String
+  slug       String   @unique
+  companyUrl String?
+  companyDna Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // TAM Engine
+  tamResult  Json?
+  tamBuiltAt DateTime?
+  tamIcp     Json?
+
+  // ICP Engine
+  activeIcpId String?
+
+  // Relations
+  users                 User[]
+  integrations          Integration[]
+  icpProfiles           IcpProfile[]
+  icpEvolutionProposals IcpEvolutionProposal[]
+  tamAccounts           TamAccount[]
+  tamBuilds             TamBuild[]
+  tamLeads              TamLead[]
+  companyCaches         CompanyCache[]
+  customerImports       CustomerImport[]
+  linkedInConnections   LinkedInConnection[]
+  aiEvents              AIEvent[]
+  ingestionSources      IngestionSource[]
+
+  @@map("workspace")
+}
+
+// ─── Integration (API keys) ────────────────────
+
+model Integration {
+  id           String            @id @default(cuid())
+  workspaceId  String
+  type         String
+  apiKey       String?
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  accountEmail String?
+  accountName  String?
+  metadata     Json?
+  status       IntegrationStatus @default(ACTIVE)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, type])
+  @@map("integration")
+}
+
+// ─── Ingestion Sources ─────────────────────────
+
+model IngestionSource {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  type           String    // "website" | "linkedin_company" | "linkedin_profile" | "csv_customers" | "document" | "crm"
+  status         String    @default("pending") // "pending" | "processing" | "complete" | "error"
+  inputUrl       String?
+  fileName       String?
+  rawContent     String?   @db.Text
+  structuredData Json?
+  errorMessage   String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, type])
+  @@map("ingestion_source")
+}
+
+// ─── TAM Engine ────────────────────────────────
+
+model TamBuild {
+  id              String       @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace    @relation(fields: [workspaceId], references: [id])
+  status          String       @default("pending")
+  phase           String       @default("pending")
+  totalCount      Int?
+  loadedCount     Int          @default(0)
+  scoredCount     Int          @default(0)
+  topLeadsLoaded  Int          @default(0)
+  dailyApiCalls   Int          @default(0)
+  dailyApiResetAt DateTime?
+  segments        Json?
+  icpRaw          Json?
+  siteContent     String?      @db.Text
+  siteUrl         String?
+  errorMessage    String?
+  qualityReport   Json?
+  startedAt       DateTime     @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  accounts        TamAccount[]
+  leads           TamLead[]
+
+  @@map("tam_build")
+}
+
+model TamAccount {
+  id          String @id @default(cuid())
+  workspaceId String
+  tamBuildId  String
+
+  name          String
+  domain        String?
+  industry      String?
+  employeeCount Int?
+  foundedYear   Int?
+  city          String?
+  country       String?
+  keywords      String[]
+  websiteUrl    String?
+  linkedinUrl   String?
+  apolloOrgId   String?
+
+  tier           String?
+  heat           String?
+  heatScore      Int     @default(0)
+  scoreBreakdown Json?
+  scoreReasoning String?
+  scoreSignals   Json?
+
+  commonInvestors String[]  @default([])
+  investorSources Json?
+  connectionNames String[]  @default([])
+
+  industryMatch Boolean @default(false)
+  sizeMatch     Boolean @default(false)
+  keywordMatch  Boolean @default(false)
+  hiringSignal  Boolean @default(false)
+  fundedSignal  Boolean @default(false)
+  signals       Json?
+
+  embedding      Json?
+  contactsLoaded Boolean @default(false)
+  contactCount   Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  tamBuild  TamBuild  @relation(fields: [tamBuildId], references: [id])
+  contacts  TamLead[]
+
+  @@unique([tamBuildId, apolloOrgId])
+  @@index([workspaceId, tier, heatScore])
+  @@index([tamBuildId, tier])
+  @@map("tam_account")
+}
+
+model TamLead {
+  id              String  @id @default(cuid())
+  workspaceId     String
+  tamBuildId      String
+  tamAccountId    String?
+  firstName       String
+  lastName        String  @default("")
+  title           String
+  seniority       String?
+  linkedinUrl     String?
+  city            String?
+  state           String?
+  country         String?
+  companyName     String
+  companyDomain   String?
+  companyIndustry String?
+  companySize     Int?
+  companyCity     String?
+  companyCountry  String?
+  apolloOrgId     String?
+  segmentId       String?
+  segmentName     String?
+  tier            String?
+  heat            String?
+  heatScore       Int     @default(0)
+  industryFit     Float   @default(0)
+  sizeFit         Float   @default(0)
+  titleFit        Float   @default(0)
+  geoFit          Float   @default(0)
+  hiringSignal    Boolean @default(false)
+  fundedSignal    Boolean @default(false)
+  techSignal      Boolean @default(false)
+  ycSignal        Boolean @default(false)
+  newsSignal      Boolean @default(false)
+  salesLedSignal  Boolean @default(false)
+  emailRevealed   Boolean @default(false)
+  email           String?
+  status          String  @default("new")
+  apolloPersonId  String?
+  dedupKey        String?
+
+  lastNameObfuscated  String?
+  hasEmail            Boolean @default(false)
+  hasCity             Boolean @default(false)
+  hasState            Boolean @default(false)
+  hasCountry          Boolean @default(false)
+  hasDirectPhone      Boolean @default(false)
+  orgHasIndustry      Boolean @default(false)
+  orgHasEmployeeCount Boolean @default(false)
+  orgHasRevenue       Boolean @default(false)
+
+  enriched          Boolean   @default(false)
+  enrichedAt        DateTime?
+  apolloRefreshedAt DateTime?
+
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id])
+  tamBuild   TamBuild    @relation(fields: [tamBuildId], references: [id])
+  tamAccount TamAccount? @relation(fields: [tamAccountId], references: [id])
+
+  @@unique([workspaceId, dedupKey])
+  @@index([workspaceId, tier, heatScore])
+  @@index([tamBuildId, tier])
+  @@index([tamBuildId, enriched])
+  @@map("tam_lead")
+}
+
+// ─── ICP Engine ────────────────────────────────
+
+model IcpProfile {
+  id          String  @id @default(cuid())
+  workspaceId String
+  version     Int     @default(1)
+  source      String  // "onboarding" | "evolution" | "manual"
+  isActive    Boolean @default(true)
+
+  nlDescription    String? @db.Text
+  acv              Float?
+  salesCycleLength String?
+  winReasons       String? @db.Text
+  lossReasons      String? @db.Text
+
+  roles         Json
+  industries    Json
+  employeeRange Json
+  geographies   Json
+  keywords      Json
+  buyingSignals Json
+  disqualifiers Json
+  competitors   Json
+  segments      Json
+  negativeIcp   Json?
+  confidence    Json
+  customerPatterns Json?
+
+  createdAt DateTime @default(now())
+
+  workspace Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  proposals IcpEvolutionProposal[]
+
+  @@unique([workspaceId, version])
+  @@index([workspaceId, isActive])
+  @@map("icp_profile")
+}
+
+model IcpEvolutionProposal {
+  id           String @id @default(cuid())
+  workspaceId  String
+  icpProfileId String
+  changes      Json
+  sampleSize   Int
+  periodStart  DateTime
+  periodEnd    DateTime
+  status       String    @default("pending")
+  appliedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  icpProfile IcpProfile @relation(fields: [icpProfileId], references: [id])
+
+  @@index([workspaceId, status])
+  @@map("icp_evolution_proposal")
+}
+
+// ─── Signal Cache ──────────────────────────────
+
+model HiringSignal {
+  id          String   @id @default(cuid())
+  domain      String   @unique
+  openRoles   Int
+  departments Json?
+  source      String
+  lastChecked DateTime
+  createdAt   DateTime @default(now())
+
+  @@map("hiring_signal")
+}
+
+model FundingSignal {
+  id          String   @id @default(cuid())
+  domain      String
+  companyName String
+  amount      Float?
+  round       String?
+  date        DateTime
+  investors   Json?
+  source      String
+  createdAt   DateTime @default(now())
+
+  @@index([domain])
+  @@map("funding_signal")
+}
+
+model AcceleratorCompany {
+  id          String   @id @default(cuid())
+  domain      String   @unique
+  name        String
+  accelerator String
+  batch       String?
+  createdAt   DateTime @default(now())
+
+  @@map("accelerator_company")
+}
+
+model NewsSignal {
+  id            String   @id @default(cuid())
+  companyDomain String
+  companyName   String
+  title         String
+  url           String
+  source        String
+  date          DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([companyDomain])
+  @@map("news_signal")
+}
+
+// ─── Customer Import ───────────────────────────
+
+model CustomerImport {
+  id          String   @id @default(cuid())
+  workspaceId String
+  source      String
+  fileName    String?
+  rowCount    Int      @default(0)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entries     CustomerImportEntry[]
+
+  @@index([workspaceId])
+  @@map("customer_import")
+}
+
+model CustomerImportEntry {
+  id            String  @id @default(cuid())
+  importId      String
+  companyName   String
+  domain        String?
+  industry      String?
+  employeeCount Int?
+  dealValue     Float?
+  country       String?
+
+  import CustomerImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId])
+  @@map("customer_import_entry")
+}
+
+// ─── LinkedIn Connections ──────────────────────
+
+model LinkedInConnection {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  profileUrl     String
+  name           String
+  headline       String?
+  companyName    String?
+  companyDomain  String?
+  connectionDate DateTime?
+  syncedAt       DateTime  @default(now())
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, profileUrl])
+  @@index([workspaceId, companyDomain])
+  @@map("linkedin_connection")
+}
+
+// ─── Scrape Cache ──────────────────────────────
+
+model CompanyCache {
+  id          String     @id @default(cuid())
+  domain      String     @unique
+  workspaceId String?
+  markdown    String?    @db.Text
+  scrapedAt   DateTime   @default(now())
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([domain, workspaceId])
+  @@map("company_cache")
+}
+
+// ─── LLM Logging ───────────────────────────────
+
+model AIEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  provider    String    @default("mistral")
+  model       String
+  action      String
+  tokensIn    Int
+  tokensOut   Int
+  cost        Float
+  latencyMs   Int
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@map("ai_event")
+}
+
+// ─── Enums ─────────────────────────────────────
+
+enum IntegrationStatus {
+  ACTIVE
+  ERROR
+  EXPIRED
+  DISCONNECTED
+}
