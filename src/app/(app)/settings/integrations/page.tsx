@@ -31,7 +31,8 @@ function IntegrationCard({ type, label, description, oauth, authUrl }: { type: s
     },
   });
 
-  const existing = integrationsQuery.data?.find((i) => i.type === type);
+  const integrations = (integrationsQuery.data ?? []) as Array<{ type: string; status: string }>;
+  const existing = integrations.find((i) => i.type === type);
   const isConnected = existing?.status === "ACTIVE";
 
   return (
