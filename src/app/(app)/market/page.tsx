@@ -356,31 +356,46 @@ export default function MarketPage() {
     );
   }
 
-  // Building state
-  if (isBuilding) {
-    const phase = buildPoll.data?.phase ?? build.phase;
-    const loaded = buildPoll.data?.loadedCount ?? build.loadedCount;
-    const total = buildPoll.data?.totalCount ?? build.totalCount;
-    const scored = buildPoll.data?.scoredCount ?? build.scoredCount;
+  // Refetch accounts periodically during build
+  const buildPhase = buildPoll.data?.phase ?? build?.phase;
+  const buildLoaded = buildPoll.data?.loadedCount ?? build?.loadedCount ?? 0;
+  const buildTotal = buildPoll.data?.totalCount ?? build?.totalCount ?? 0;
+  const buildScored = buildPoll.data?.scoredCount ?? build?.scoredCount ?? 0;
 
-    return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <ArrowsClockwise className="size-8 text-primary animate-spin" />
-        <div className="text-center">
-          <p className="text-sm font-medium text-foreground">Building your TAM</p>
-          <p className="text-xs text-muted-foreground mt-1 capitalize">{phase?.replace(/-/g, " ")}...</p>
-          {total && total > 0 && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {loaded}/{total} accounts loaded · {scored} scored
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!isBuilding) return;
+    const interval = setInterval(() => {
+      accountsQuery.refetch();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBuilding]);
 
   return (
     <div className="flex flex-col h-screen">
+      {/* Build progress bar */}
+      {isBuilding && (
+        <div className="border-b bg-primary/5 px-4 py-2 flex items-center gap-3 shrink-0">
+          <ArrowsClockwise className="size-3.5 text-primary animate-spin shrink-0" />
+          <p className="text-xs text-foreground font-medium capitalize">
+            {buildPhase?.replace(/-/g, " ")}...
+          </p>
+          {buildTotal > 0 && (
+            <>
+              <div className="flex-1 max-w-xs h-1.5 bg-border rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-500"
+                  style={{ width: `${Math.round((buildLoaded / buildTotal) * 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                {buildLoaded}/{buildTotal} loaded · {buildScored} scored
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="border-b px-4 py-2 flex items-center gap-3 shrink-0 bg-card">
         <div className="relative flex-1 max-w-md">

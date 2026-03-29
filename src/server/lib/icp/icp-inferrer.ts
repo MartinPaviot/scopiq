@@ -263,6 +263,11 @@ function buildInferenceContext(input: IcpInferenceInput): string {
     if (diffs.length) sections.push(`DIFFERENTIATORS: ${diffs.join("; ")}`);
   }
 
+  // Raw website content (injected by Scopiq when CompanyDna is basic)
+  if (dna.rawWebsiteContent) {
+    sections.push(`\nRAW WEBSITE CONTENT (use this to understand the product):\n${String(dna.rawWebsiteContent).slice(0, 4000)}`);
+  }
+
   if (input.customerPatterns && input.customerPatterns.totalCustomers > 0) {
     const cp = input.customerPatterns;
     const dominant = getDominantPatterns(cp);
@@ -320,10 +325,13 @@ export async function inferIcpProfile(
     contentLength: context.length,
   });
 
+  // Cap context to ~5K chars to keep Mistral response fast (<15s)
+  const cappedContext = context.length > 5000 ? context.slice(0, 5000) + "\n\n[truncated]" : context;
+
   const rawResult = await mistralClient.jsonRaw({
     model: "mistral-large-latest",
     system: INFER_ICP_SYSTEM,
-    prompt: `Website: ${input.siteUrl}\n\n${context}`,
+    prompt: `Website: ${input.siteUrl}\n\n${cappedContext}`,
     workspaceId: input.workspaceId,
     action: "icp-unified-inference",
     temperature: 0.3,

@@ -126,13 +126,13 @@ const BUILD_PHASES = [
   { id: "analyzing", label: "Analyzing your data sources" },
   { id: "scraping", label: "Scraping website content" },
   { id: "extracting", label: "Extracting company DNA" },
-  { id: "inferring", label: "Generating ICP with Mistral AI" },
+  { id: "inferring", label: "Generating your ICP" },
   { id: "validating", label: "Computing confidence scores" },
   { id: "done-icp", label: "ICP ready — starting TAM build" },
-  { id: "counting", label: "Counting organizations on Apollo" },
-  { id: "loading-top", label: "Loading top accounts (page 1/20)" },
-  { id: "loading-more", label: "Loading accounts..." },
-  { id: "scoring", label: "Scoring accounts (5D engine)" },
+  { id: "counting", label: "Counting matching organizations" },
+  { id: "loading-top", label: "Loading top accounts" },
+  { id: "loading-more", label: "Loading more accounts..." },
+  { id: "scoring", label: "Scoring and ranking accounts" },
   { id: "contacts", label: "Discovering contacts for Tier A" },
   { id: "signals", label: "Detecting buying signals" },
   { id: "complete", label: "TAM build complete" },
@@ -146,9 +146,9 @@ const PHASE_LOGS: Record<string, string[]> = {
     "Loading customer import data...",
   ],
   scraping: [
-    "Fetching homepage via Jina Reader...",
-    "Extracting meta tags and OG data...",
-    "Parsing page content (markdown)...",
+    "Fetching homepage content...",
+    "Extracting meta tags and structured data...",
+    "Parsing page content...",
   ],
   extracting: [
     "Identifying value proposition...",
@@ -158,9 +158,9 @@ const PHASE_LOGS: Record<string, string[]> = {
   ],
   inferring: [
     "Building inference context...",
-    "Calling Mistral Large (structured JSON)...",
+    "Running AI analysis...",
     "Parsing roles, industries, geographies...",
-    "Mapping to Apollo search filters...",
+    "Mapping to search filters...",
   ],
   validating: [
     "Computing confidence: industry 0.82",
@@ -170,11 +170,11 @@ const PHASE_LOGS: Record<string, string[]> = {
   ],
   "done-icp": [
     "ICP saved — version 1",
-    "Triggering TAM build via Inngest...",
+    "Starting TAM build...",
   ],
   counting: [
-    "Converting ICP to Apollo org filters...",
-    "Querying Apollo Organization Search...",
+    "Converting ICP to search filters...",
+    "Querying organization database...",
   ],
   "loading-top": [
     "Page 1/20 — 100 organizations loaded",
@@ -198,9 +198,19 @@ const PHASE_LOGS: Record<string, string[]> = {
 function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgress: BuildProgress | null }) {
   const currentId = tamProgress?.phase ?? icpPhase;
   const currentIdx = BUILD_PHASES.findIndex((p) => p.id === currentId);
+  const [completedPhases, setCompletedPhases] = useState<Set<string>>(new Set());
   const [logs, setLogs] = useState<string[]>([]);
   const [elapsedSec, setElapsedSec] = useState(0);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const prevPhaseRef = useRef<string>("");
+
+  // Track actually visited phases — mark previous phase as completed when phase changes
+  useEffect(() => {
+    if (prevPhaseRef.current && prevPhaseRef.current !== currentId) {
+      setCompletedPhases((prev) => new Set(prev).add(prevPhaseRef.current));
+    }
+    prevPhaseRef.current = currentId;
+  }, [currentId]);
 
   // Timer
   useEffect(() => {
@@ -262,7 +272,7 @@ function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgres
         <div className="space-y-2 mb-4">
           {BUILD_PHASES.map((phase, i) => {
             const isCurrent = phase.id === currentId;
-            const isPast = i < currentIdx;
+            const isPast = completedPhases.has(phase.id);
             if (i > currentIdx + 2 && !isPast) return null; // Only show next 2 upcoming
 
             return (
@@ -397,8 +407,15 @@ export default function SetupPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  if (tamProgress?.type === "complete") {
-    setTimeout(() => router.push("/market"), 1500);
+  // Redirect to market as soon as accounts start loading
+  const redirectedRef = useRef(false);
+  if (
+    !redirectedRef.current &&
+    tamProgress?.phase &&
+    ["loading-top", "loading-more", "scoring", "contacts", "signals", "complete"].includes(tamProgress.phase)
+  ) {
+    redirectedRef.current = true;
+    router.push("/market");
   }
 
   // Check completed sources

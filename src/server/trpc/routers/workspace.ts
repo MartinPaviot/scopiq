@@ -25,12 +25,15 @@ async function scrapeSiteBasic(url: string): Promise<{
     if (jinaRes.ok) {
       const md = await jinaRes.text();
       if (md.length > 100) {
-        // Extract title from first heading
-        const titleMatch = md.match(/^#\s+(.+)/m);
-        const descMatch = md.match(/\n([A-Z].{30,200})/);
+        // Extract title — Jina uses "Title: ..." format, also try markdown heading
+        const jinaTitleMatch = md.match(/^Title:\s*(.+)/m);
+        const mdTitleMatch = md.match(/^#\s+(.+)/m);
+        const title = jinaTitleMatch?.[1]?.trim() ?? mdTitleMatch?.[1]?.trim() ?? "";
+        // Description — first substantial paragraph of text
+        const descMatch = md.match(/\n([A-Z][A-Za-z][\s\S]{30,300}?)(?:\n\n|\n[#\-*])/);
         return {
-          title: titleMatch?.[1] ?? "",
-          description: descMatch?.[1]?.trim() ?? "",
+          title,
+          description: descMatch?.[1]?.trim().replace(/\n/g, " ") ?? "",
           ogImage: null,
           markdown: md.slice(0, 15000),
           ok: true,

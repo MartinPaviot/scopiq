@@ -77,9 +77,9 @@ export async function GET(req: Request) {
               "loading-top": "Loading top accounts...",
               expanding: "Loading more accounts...",
               scoring: "Scoring accounts...",
-              "rate-limited": "Rate limited — pausing...",
+              "rate-limited": "Daily limit reached — will resume automatically",
               complete: "TAM build complete!",
-              failed: build.errorMessage ?? "Build failed",
+              failed: build.errorMessage?.replace(/Apollo|Jina|Mistral|Inngest/gi, "service") ?? "Build failed",
             };
 
             send({

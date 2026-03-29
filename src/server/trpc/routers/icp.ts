@@ -18,36 +18,22 @@ export const icpRouter = router({
       where: { workspaceId, status: "complete" },
     });
 
-    // Get CompanyDna from workspace + cached markdown from scrape
+    // Get workspace data + cached website markdown
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: { companyDna: true, companyUrl: true },
     });
-    let companyDna = workspace?.companyDna as Record<string, unknown> | null;
+    const companyDna = workspace?.companyDna as Record<string, unknown> | null;
 
-    // If we have a cached website markdown but no rich CompanyDna yet,
-    // run the LLM analysis NOW (deferred from scrape step for reliability)
+    // Load cached website markdown to inject directly into ICP inference
+    // (single LLM call — no separate CompanyDna extraction step)
+    let websiteMarkdown = "";
     if (workspace?.companyUrl) {
       try {
         const domain = new URL(workspace.companyUrl).hostname;
         const cache = await prisma.companyCache.findUnique({ where: { domain } });
-        if (cache?.markdown && cache.markdown.length > 100) {
-          const { analyzeMarkdown } = await import("@/server/lib/enrichment/company-analyzer");
-          const richDna = await analyzeMarkdown(cache.markdown, workspaceId);
-          companyDna = richDna as unknown as Record<string, unknown>;
-
-          // Update workspace with rich DNA
-          await prisma.workspace.update({
-            where: { id: workspaceId },
-            data: { companyDna: companyDna as unknown as Prisma.InputJsonValue },
-          });
-          logger.info("[icp.infer] CompanyDna enriched from cached markdown");
-        }
-      } catch (err) {
-        logger.warn("[icp.infer] LLM analysis failed, using basic DNA", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+        if (cache?.markdown) websiteMarkdown = cache.markdown.slice(0, 8000);
+      } catch { /* non-critical */ }
     }
 
     // Get customer patterns from CSV imports
@@ -81,8 +67,14 @@ export const icpRouter = router({
       select: { companyUrl: true },
     }))?.companyUrl ?? "";
 
+    // Inject website markdown into companyDna so the LLM gets raw site content
+    const enrichedDna: Record<string, unknown> = { ...(companyDna ?? {}) };
+    if (websiteMarkdown) {
+      enrichedDna.rawWebsiteContent = websiteMarkdown;
+    }
+
     const icpData = await inferIcpProfile({
-      companyDna: (companyDna ?? {}) as Record<string, unknown>,
+      companyDna: enrichedDna,
       customerPatterns,
       nlDescription: null,
       acv: null,
