@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { router, protectedProcedure } from "../trpc";
 import { scrapeViaJina } from "@/server/lib/connectors/jina";
 import { Prisma } from "@prisma/client";
-import { analyzeClientSite } from "@/server/lib/enrichment/company-analyzer";
+import { analyzeMarkdown } from "@/server/lib/enrichment/company-analyzer";
 import { logger } from "@/lib/logger";
 
 // ─── CSV Parser (ported from LeadSens customer-import-step) ──
@@ -155,7 +155,7 @@ export const ingestionRouter = router({
 
         if (input.type === "website") {
           // Full CompanyDna extraction
-          const companyDna = await analyzeClientSite(result.markdown, ctx.workspaceId);
+          const companyDna = await analyzeMarkdown(result.markdown, ctx.workspaceId);
           structuredData = companyDna as Record<string, unknown>;
 
           // Also update workspace companyDna

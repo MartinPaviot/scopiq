@@ -399,3 +399,28 @@ export async function analyzeClientSite(
   const normalized = normalizeKeys(raw);
   return companyDnaSchema.parse(normalized);
 }
+
+/**
+ * Analyze pre-scraped markdown content directly (no re-scraping).
+ * Use this when you already have the markdown from Jina.
+ */
+export async function analyzeMarkdown(
+  markdown: string,
+  workspaceId: string,
+): Promise<CompanyDna> {
+  if (!markdown || markdown.length < 50) {
+    throw new Error("Not enough content to analyze.");
+  }
+
+  const raw = await mistralClient.jsonRaw({
+    model: "mistral-large-latest",
+    system: COMPANY_ANALYSIS_SYSTEM,
+    prompt: `Analyze this website and extract the commercial information:\n\n${markdown}`,
+    workspaceId,
+    action: "company-analysis",
+    temperature: 0.3,
+  });
+
+  const normalized = normalizeKeys(raw);
+  return companyDnaSchema.parse(normalized);
+}

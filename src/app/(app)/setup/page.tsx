@@ -259,6 +259,8 @@ export default function SetupPage() {
   const [competitors, setCompetitors] = useState("");
   const [csvUploaded, setCsvUploaded] = useState(false);
   const [crmConnected, setCrmConnected] = useState(false);
+  const [docFileName, setDocFileName] = useState("");
+  const [csvFileName, setCsvFileName] = useState("");
 
   const sourcesQuery = trpc.ingestion.getSources.useQuery();
   const workspaceQuery = trpc.workspace.getSettings.useQuery();
@@ -440,6 +442,17 @@ export default function SetupPage() {
               <InputCard icon={<FileText className="size-5" />} label="Pitch deck or one-pager" hint="PDF, PPTX, or DOCX — drag and drop" complete={sources.some((s) => s.type === "document" && s.status === "complete")} delay={700}>
                 <div
                   className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all hover:border-primary/40 hover:bg-primary/[0.02] active:scale-[0.99]"
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/60", "bg-primary/5"); }}
+                  onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/60", "bg-primary/5"); }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("border-primary/60", "bg-primary/5");
+                    const file = e.dataTransfer.files?.[0];
+                    if (!file) return;
+                    setDocFileName(file.name);
+                    const content = await file.text();
+                    processUpload.mutate({ type: "document", fileName: file.name, content: content.slice(0, 500000) });
+                  }}
                   onClick={() => {
                     const input = document.createElement("input");
                     input.type = "file";
@@ -447,14 +460,24 @@ export default function SetupPage() {
                     input.onchange = async (e) => {
                       const file = (e.target as HTMLInputElement).files?.[0];
                       if (!file) return;
+                      setDocFileName(file.name);
                       const content = await file.text();
                       processUpload.mutate({ type: "document", fileName: file.name, content: content.slice(0, 500000) });
                     };
                     input.click();
                   }}
                 >
-                  <FileText className="size-8 text-muted-foreground/40 mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">Drop your file here or <span className="text-primary font-medium cursor-pointer">browse</span></p>
+                  {docFileName ? (
+                    <>
+                      <CheckCircle className="size-6 text-emerald-500 mx-auto mb-1" weight="fill" />
+                      <p className="text-xs font-medium text-foreground">{docFileName}</p>
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="size-8 text-muted-foreground/40 mx-auto mb-2" />
+                      <p className="text-xs text-muted-foreground">Drop your file here or <span className="text-primary font-medium cursor-pointer">browse</span></p>
+                    </>
+                  )}
                 </div>
               </InputCard>
             </TierSection>
@@ -485,6 +508,17 @@ export default function SetupPage() {
               <InputCard icon={<FileText className="size-5" />} label="CSV of beta users or customers" complete={csvUploaded || sources.some((s) => s.type === "csv_customers" && s.status === "complete")} delay={1300}>
                 <div
                   className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all hover:border-primary/40"
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/60", "bg-primary/5"); }}
+                  onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/60", "bg-primary/5"); }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("border-primary/60", "bg-primary/5");
+                    const file = e.dataTransfer.files?.[0];
+                    if (!file) return;
+                    setCsvFileName(file.name);
+                    const content = await file.text();
+                    processUpload.mutate({ type: "csv_customers", fileName: file.name, content }, { onSuccess: () => setCsvUploaded(true) });
+                  }}
                   onClick={() => {
                     const input = document.createElement("input");
                     input.type = "file";
@@ -492,13 +526,21 @@ export default function SetupPage() {
                     input.onchange = async (e) => {
                       const file = (e.target as HTMLInputElement).files?.[0];
                       if (!file) return;
+                      setCsvFileName(file.name);
                       const content = await file.text();
                       processUpload.mutate({ type: "csv_customers", fileName: file.name, content }, { onSuccess: () => setCsvUploaded(true) });
                     };
                     input.click();
                   }}
                 >
-                  <p className="text-xs text-muted-foreground">Drop CSV here — company name, domain, industry, size</p>
+                  {csvFileName ? (
+                    <>
+                      <CheckCircle className="size-6 text-emerald-500 mx-auto mb-1" weight="fill" />
+                      <p className="text-xs font-medium text-foreground">{csvFileName}</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Drop CSV here — company name, domain, industry, size</p>
+                  )}
                 </div>
               </InputCard>
 

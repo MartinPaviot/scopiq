@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { router, protectedProcedure } from "../trpc";
 import { scrapeViaJina } from "@/server/lib/connectors/jina";
-import { analyzeClientSite } from "@/server/lib/enrichment/company-analyzer";
+import { analyzeMarkdown } from "@/server/lib/enrichment/company-analyzer";
 import { logger } from "@/lib/logger";
 
 export const workspaceRouter = router({
@@ -58,7 +58,7 @@ export const workspaceRouter = router({
         return { error: scrapeResult.message };
       }
 
-      const companyDna = await analyzeClientSite(scrapeResult.markdown, ctx.workspaceId);
+      const companyDna = await analyzeMarkdown(scrapeResult.markdown, ctx.workspaceId);
 
       // Store on workspace
       await prisma.workspace.update({
