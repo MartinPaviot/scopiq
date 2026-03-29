@@ -1,20 +1,19 @@
 /**
- * TAM Account Scorer — Multidimensional scoring engine.
+ * TAM Account Scorer -- Multidimensional scoring engine.
  *
- * Replaces the basic industryMatch + sizeMatch = score approach
- * with a 5-dimension scoring system:
- *   1. Industry Fit (0-25) — exact, related, or unrelated
- *   2. Size Fit (0-25) — perfect, adjacent, or way off
- *   3. Keyword Fit (0-20) — overlap between ICP and account keywords
- *   4. Signal Score (0-20) — hiring, funded, techMatch, etc.
- *   5. Data Freshness (0-10) — how complete the data is
+ * 5-dimension scoring system:
+ *   1. Industry Fit (0-25)
+ *   2. Size Fit (0-25)
+ *   3. Keyword Fit (0-20)
+ *   4. Signal Score (0-20)
+ *   5. Data Freshness (0-10)
  *
- * Total: 0-100 → Tier A/B/C/D + Heat Burning/Hot/Warm/Cold
+ * Total: 0-100 -> Tier A/B/C/D + Heat Burning/Hot/Warm/Cold
  */
 
 import type { TamICP } from "./tam-icp-inferrer";
 
-// ─── Types ──────────────────────────────────────────────
+// --- Types ---
 
 export interface AccountData {
   name: string;
@@ -55,7 +54,7 @@ export interface ScoringResult {
   scoreSignals: ScoreSignal[];
 }
 
-// ─── Industry Relatedness ───────────────────────────────
+// --- Industry Relatedness ---
 
 const RELATED_GROUPS: string[][] = [
   ["saas", "software", "technology", "internet", "information technology", "computer software", "it services"],
@@ -85,7 +84,7 @@ function areRelatedIndustries(accountIndustry: string, icpIndustries: string[]):
   return false;
 }
 
-// ─── Size Range Helpers ─────────────────────────────────
+// --- Size Range Helpers ---
 
 function parseRanges(ranges: string[]): Array<{ min: number; max: number }> {
   return ranges.map((r) => {
@@ -102,7 +101,7 @@ function getIcpSizeRange(ranges: string[]): [number, number] {
   return [min, max];
 }
 
-// ─── Main Scorer ────────────────────────────────────────
+// --- Main Scorer ---
 
 export interface NegativeIcpRules {
   industries: string[];
@@ -150,7 +149,6 @@ export function scoreAccount(
         }],
       };
     }
-    // Check company name patterns
     if (account.name) {
       const nameLower = account.name.toLowerCase();
       const nameDisqualified = negativeIcp.companyPatterns.some((p) =>
@@ -178,7 +176,6 @@ export function scoreAccount(
     }
   }
 
-  // Confidence multipliers (default 1.0 = no change)
   const conf = confidence ?? { industry: 1, size: 1, title: 1, geo: 1 };
   const icpIndustries = (icp.industries ?? []).map((i) => i.toLowerCase());
   const icpKeywords = [
@@ -187,42 +184,34 @@ export function scoreAccount(
     ...(icp.buying_signals ?? []),
   ].map((k) => k.toLowerCase());
 
-  // ── INDUSTRY FIT (0-25) ──
-  let industryFit = 5; // base for unknown
+  let industryFit = 5;
   let industryMatch = false;
   if (account.industry) {
     const accountIndustry = account.industry.toLowerCase();
-
-    // Exact match → 25
     if (icpIndustries.some((i) => accountIndustry.includes(i) || i.includes(accountIndustry))) {
       industryFit = 25;
       industryMatch = true;
-    }
-    // Related industry → 15
-    else if (areRelatedIndustries(accountIndustry, icpIndustries)) {
+    } else if (areRelatedIndustries(accountIndustry, icpIndustries)) {
       industryFit = 15;
       industryMatch = true;
     }
   }
 
-  // ── SIZE FIT (0-25) ──
   let sizeFit = 5;
   let sizeMatch = false;
   if (account.employeeCount) {
     const [minIcp, maxIcp] = getIcpSizeRange(icp.employee_ranges ?? []);
-
     if (account.employeeCount >= minIcp && account.employeeCount <= maxIcp) {
-      sizeFit = 25; // perfect fit
+      sizeFit = 25;
       sizeMatch = true;
     } else if (account.employeeCount >= minIcp * 0.5 && account.employeeCount <= maxIcp * 2) {
-      sizeFit = 15; // adjacent range
+      sizeFit = 15;
       sizeMatch = true;
     } else {
-      sizeFit = 5; // way off
+      sizeFit = 5;
     }
   }
 
-  // ── KEYWORD FIT (0-20) ──
   let keywordFit = 0;
   let keywordMatch = false;
   if (account.keywords.length > 0 && icpKeywords.length > 0) {
@@ -234,12 +223,10 @@ export function scoreAccount(
     keywordMatch = keywordFit >= 8;
   }
 
-  // ── SIGNAL SCORE (0-20) ──
   let signalScore = 0;
-  if (signals.hiring) signalScore += 10;  // actively growing
-  if (signals.funded) signalScore += 10;  // has budget
+  if (signals.hiring) signalScore += 10;
+  if (signals.funded) signalScore += 10;
 
-  // ── DATA FRESHNESS / COMPLETENESS (0-10) ──
   let freshness = 0;
   if (account.domain) freshness += 2;
   if (account.websiteUrl) freshness += 2;
@@ -247,28 +234,21 @@ export function scoreAccount(
   if (account.foundedYear) freshness += 2;
   if (account.employeeCount) freshness += 2;
 
-  // ── Apply confidence multipliers ──
   industryFit = Math.round(industryFit * conf.industry);
   sizeFit = Math.round(sizeFit * conf.size);
 
-  // ── TOTAL ──
   const total = industryFit + sizeFit + keywordFit + signalScore + freshness;
 
-  // ── TIER (fit-driven) ──
   const tier = total >= 70 ? "A" as const : total >= 50 ? "B" as const : total >= 30 ? "C" as const : "D" as const;
 
-  // ── HEAT (signal-driven, not just total score) ──
-  // Heat should primarily reflect INTENT signals, not just fit
   const intentScore = signalScore + (keywordFit >= 15 ? 5 : 0);
   const heat = intentScore >= 15 ? "Burning" as const
     : intentScore >= 10 ? "Hot" as const
     : total >= 50 ? "Warm" as const
     : "Cold" as const;
 
-  // ── STRUCTURED SCORE SIGNALS ──
   const scoreSignals: ScoreSignal[] = [];
 
-  // Fit signals
   if (account.industry) {
     scoreSignals.push({
       signal: "Industry",
@@ -301,7 +281,6 @@ export function scoreAccount(
     });
   }
 
-  // Intent signals
   if (signals.hiring) {
     scoreSignals.push({
       signal: "Hiring Outbound",
@@ -321,7 +300,6 @@ export function scoreAccount(
     });
   }
 
-  // Data completeness signals
   const missingFields = [];
   if (!account.domain) missingFields.push("domain");
   if (!account.websiteUrl) missingFields.push("website");
@@ -336,7 +314,6 @@ export function scoreAccount(
     });
   }
 
-  // ── REASONING (legacy, kept for backwards compat) ──
   const reasons: string[] = [];
   if (industryFit >= 20) reasons.push(`${account.industry ?? "industry"} match`);
   if (sizeFit >= 20) reasons.push(`${account.employeeCount?.toLocaleString() ?? "?"} employees`);

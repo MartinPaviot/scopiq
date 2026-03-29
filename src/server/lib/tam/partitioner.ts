@@ -1,17 +1,17 @@
 /**
- * TAM Partitioner — Splits large TAM queries into partitions under 50K each.
+ * TAM Partitioner -- Splits large TAM queries into partitions under 50K each.
  *
- * Apollo caps results at 50,000 per query (100/page × 500 pages).
+ * Apollo caps results at 50,000 per query (100/page x 500 pages).
  * A TAM of 847K needs splitting into partitions of < 50K.
  *
- * Algorithm: recursive split by geo → size → title.
+ * Algorithm: recursive split by geo -> size -> title.
  * Count results are cached to avoid duplicate API calls.
  */
 
 import { apolloCount, type ApolloTAMSearchParams } from "@/server/lib/apollo/client";
 import { logger } from "@/lib/logger";
 
-// ─── Constants ──────────────────────────────────────────
+// --- Constants ---
 
 const DEFAULT_MAX_PER_PARTITION = 50_000;
 
@@ -72,7 +72,7 @@ const SIZE_LABELS: Record<string, string> = {
   "5001,10000": "5K-10K emp",
 };
 
-// ─── Types ──────────────────────────────────────────────
+// --- Types ---
 
 export interface Partition {
   filters: ApolloTAMSearchParams;
@@ -80,7 +80,7 @@ export interface Partition {
   segmentName: string;
 }
 
-// ─── Count Cache ────────────────────────────────────────
+// --- Count Cache ---
 
 function cacheKey(params: ApolloTAMSearchParams): string {
   const normalized = {
@@ -106,7 +106,7 @@ async function cachedCount(
   return count;
 }
 
-// ─── Segment Name Builder ───────────────────────────────
+// --- Segment Name Builder ---
 
 function buildSegmentName(
   geo?: string,
@@ -117,23 +117,11 @@ function buildSegmentName(
   if (geo) parts.push(geo);
   if (sizeRange) parts.push(SIZE_LABELS[sizeRange] ?? sizeRange);
   if (title) parts.push(title);
-  return parts.join(" · ") || "Global";
+  return parts.join(" - ") || "Global";
 }
 
-// ─── Partitioner ────────────────────────────────────────
+// --- Partitioner ---
 
-/**
- * Partition a TAM query into sub-queries.
- *
- * Strategy: split by title first (fast — N titles = N API calls),
- * then only split further by geo if a title partition exceeds the limit.
- * Since the build step caps at 100 pages (10K leads) per partition anyway,
- * we don't need ultra-fine granularity — just enough to get diverse segments.
- *
- * @param baseFilters - The base Apollo search filters (titles, sizes, keywords, etc.)
- * @param maxPerPartition - Max results per partition (default 50,000)
- * @returns Array of partitions with filters, count, and human-readable segmentName
- */
 export async function partitionTAM(
   baseFilters: ApolloTAMSearchParams,
   maxPerPartition: number = DEFAULT_MAX_PER_PARTITION,
@@ -141,7 +129,6 @@ export async function partitionTAM(
   const cache = new Map<string, number>();
   const partitions: Partition[] = [];
 
-  // Get total count
   const totalCount = await cachedCount(baseFilters, cache);
 
   logger.info("[tam/partitioner] Starting partitioning", {
@@ -149,7 +136,6 @@ export async function partitionTAM(
     maxPerPartition,
   });
 
-  // If small enough, return as single partition
   if (totalCount <= maxPerPartition) {
     return [
       {
@@ -163,7 +149,6 @@ export async function partitionTAM(
   const titles = baseFilters.person_titles ?? [];
   const geos = baseFilters.person_locations ?? [];
 
-  // ── Strategy 1: Split by title (fast — N API calls) ──
   if (titles.length > 1) {
     for (const title of titles) {
       const titleFilters: ApolloTAMSearchParams = {
@@ -182,7 +167,6 @@ export async function partitionTAM(
         continue;
       }
 
-      // Title too large — split further by geo (only ICP geos, not all 30)
       const geosToSplit = geos.length > 0 ? geos : GEO_LIST.slice(0, 10);
       for (const geo of geosToSplit) {
         const geoFilters: ApolloTAMSearchParams = {
@@ -195,12 +179,11 @@ export async function partitionTAM(
         partitions.push({
           filters: geoFilters,
           count: geoCount,
-          segmentName: `${geo} · ${title}`,
+          segmentName: `${geo} - ${title}`,
         });
       }
     }
   } else {
-    // ── Strategy 2: No titles — split by geo only ──
     const geosToSplit = geos.length > 0 ? geos : GEO_LIST.slice(0, 10);
     for (const geo of geosToSplit) {
       const geoFilters: ApolloTAMSearchParams = {
@@ -218,7 +201,6 @@ export async function partitionTAM(
     }
   }
 
-  // Fallback: if no partitions were created, use original query
   if (partitions.length === 0) {
     partitions.push({
       filters: baseFilters,
@@ -237,7 +219,7 @@ export async function partitionTAM(
   return partitions;
 }
 
-// ─── Size Splitter ──────────────────────────────────────
+// --- Size Splitter ---
 
 async function splitBySize(
   baseFilters: ApolloTAMSearchParams,
@@ -265,7 +247,6 @@ async function splitBySize(
       continue;
     }
 
-    // Size bucket still too large — split by individual title
     const titlePartitions = await splitByTitle(
       sizeFilters,
       geoLabel,
@@ -281,7 +262,7 @@ async function splitBySize(
   return partitions;
 }
 
-// ─── Title Splitter ─────────────────────────────────────
+// --- Title Splitter ---
 
 async function splitByTitle(
   baseFilters: ApolloTAMSearchParams,
@@ -294,7 +275,6 @@ async function splitByTitle(
   const titles = baseFilters.person_titles ?? [];
 
   if (titles.length === 0) {
-    // No titles to split by — keep as oversized partition with warning
     const count = await cachedCount(baseFilters, cache);
     logger.warn("[tam/partitioner] Partition exceeds max, no titles to split further", {
       segmentName: buildSegmentName(geoLabel, sizeRange),

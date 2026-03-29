@@ -1,5 +1,5 @@
 /**
- * TAM Signal Detector — LinkedIn Connections (BYOT).
+ * TAM Signal Detector -- LinkedIn Connections (BYOT).
  *
  * Checks if the user has 1st-degree LinkedIn connections at a prospect company.
  * Uses pre-synced LinkedInConnection records (matched by companyDomain).
@@ -53,7 +53,7 @@ export async function detectLinkedInConnections(
       url: c.profileUrl,
       title: c.headline ?? c.name,
     }));
-    result.reasoning = `You have ${connections.length} LinkedIn connection${connections.length > 1 ? "s" : ""} at this company — warm intro path available.`;
+    result.reasoning = `You have ${connections.length} LinkedIn connection${connections.length > 1 ? "s" : ""} at this company -- warm intro path available.`;
     result.points = Math.min(connections.length * 5, 15);
 
     return result;

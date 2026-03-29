@@ -1,24 +1,23 @@
 /**
- * ICP Converters — Bridge between IcpProfile and external systems.
+ * ICP Converters -- Bridge between IcpProfile and external systems.
  *
  * Handles:
- * - IcpProfile → Apollo Organization Search filters
- * - IcpProfile → Apollo People Search filters
- * - Legacy TamICP → IcpProfileData (migration)
- * - Legacy InferredICP → IcpProfileData (migration)
+ * - IcpProfile -> Apollo Organization Search filters
+ * - IcpProfile -> Apollo People Search filters
+ * - Legacy TamICP -> IcpProfileData (migration)
+ * - Legacy InferredICP -> IcpProfileData (migration)
  */
 
 import type { ApolloOrgSearchParams } from "@/server/lib/apollo/client";
-import type { IcpProfileData, ConfidenceScores } from "./icp-schema";
+import type { IcpProfileData } from "./icp-schema";
 import type { TamICP } from "@/server/lib/tam/tam-icp-inferrer";
 import type { InferredICP } from "@/server/lib/tam/infer-icp";
 
-// ─── IcpProfile → Apollo Org Search ───────────────────
+// --- IcpProfile -> Apollo Org Search ---
 
 export function icpProfileToOrgFilters(
   profile: IcpProfileData,
 ): ApolloOrgSearchParams {
-  // Combine industries + keywords for broad coverage
   const keywordTags = new Set<string>();
   for (const ind of profile.industries) keywordTags.add(ind);
   for (const kw of profile.keywords) keywordTags.add(kw);
@@ -42,7 +41,7 @@ export function icpProfileToOrgFilters(
   };
 }
 
-// ─── IcpProfile → Apollo People Search ────────────────
+// --- IcpProfile -> Apollo People Search ---
 
 export interface ApolloPeopleSearchParams {
   person_titles: string[];
@@ -74,14 +73,9 @@ export function icpProfileToPeopleFilters(
   };
 }
 
-// ─── Legacy TamICP → IcpProfileData ───────────────────
+// --- Legacy TamICP -> IcpProfileData ---
 
-/**
- * Convert the legacy TamICP (from tam-icp-inferrer.ts) to the new unified schema.
- * Used for migration of existing workspaces.
- */
 export function tamIcpToProfileData(tamIcp: TamICP): IcpProfileData {
-  // Parse employee ranges to find min/max/sweetSpot
   const ranges = tamIcp.employee_ranges.map((r) => {
     const [min, max] = r.split(",").map(Number);
     return { min: min || 0, max: max || 100000 };
@@ -135,11 +129,8 @@ export function tamIcpToProfileData(tamIcp: TamICP): IcpProfileData {
   };
 }
 
-// ─── Legacy InferredICP → IcpProfileData ──────────────
+// --- Legacy InferredICP -> IcpProfileData ---
 
-/**
- * Convert the legacy InferredICP (from infer-icp.ts) to the new unified schema.
- */
 export function inferredIcpToProfileData(
   inferredIcp: InferredICP,
 ): IcpProfileData {
@@ -184,12 +175,8 @@ export function inferredIcpToProfileData(
   };
 }
 
-// ─── IcpProfileData → Legacy InferredICP ──────────────
+// --- IcpProfileData -> Legacy InferredICP ---
 
-/**
- * Convert IcpProfileData back to InferredICP format for backward compat
- * with existing score-leads.ts and tam-engine.ts consumers.
- */
 export function profileDataToInferredIcp(
   profile: IcpProfileData,
 ): InferredICP {
@@ -220,12 +207,8 @@ export function profileDataToInferredIcp(
   };
 }
 
-// ─── IcpProfileData → Legacy TamICP ───────────────────
+// --- IcpProfileData -> Legacy TamICP ---
 
-/**
- * Convert IcpProfileData back to TamICP format for backward compat
- * with existing tam-build.ts Apollo filter conversion.
- */
 export function profileDataToTamIcp(profile: IcpProfileData): TamICP {
   return {
     product_summary: "",

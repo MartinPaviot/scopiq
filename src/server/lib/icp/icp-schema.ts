@@ -1,5 +1,5 @@
 /**
- * ICP Schema — Unified Zod schemas for the ICP system.
+ * ICP Schema -- Unified Zod schemas for the ICP system.
  *
  * Single source of truth for ICP data shapes used across:
  * - IcpProfile (Prisma model)
@@ -11,7 +11,7 @@
 
 import { z } from "zod/v4";
 
-// ─── ICP Role ──────────────────────────────────────────
+// --- ICP Role ---
 
 export const icpRoleSchema = z.object({
   title: z.string(),
@@ -22,7 +22,7 @@ export const icpRoleSchema = z.object({
 
 export type IcpRole = z.infer<typeof icpRoleSchema>;
 
-// ─── Buying Signal ─────────────────────────────────────
+// --- Buying Signal ---
 
 export const buyingSignalSchema = z.object({
   name: z.string(),
@@ -33,7 +33,7 @@ export const buyingSignalSchema = z.object({
 
 export type BuyingSignal = z.infer<typeof buyingSignalSchema>;
 
-// ─── Employee Range ────────────────────────────────────
+// --- Employee Range ---
 
 export const employeeRangeSchema = z.object({
   min: z.number().default(10),
@@ -43,7 +43,7 @@ export const employeeRangeSchema = z.object({
 
 export type EmployeeRange = z.infer<typeof employeeRangeSchema>;
 
-// ─── Segment ───────────────────────────────────────────
+// --- Segment ---
 
 export const icpSegmentSchema = z.object({
   name: z.string(),
@@ -55,7 +55,7 @@ export const icpSegmentSchema = z.object({
 
 export type IcpSegment = z.infer<typeof icpSegmentSchema>;
 
-// ─── Negative ICP ──────────────────────────────────────
+// --- Negative ICP ---
 
 export const negativeIcpSchema = z.object({
   industries: z.array(z.string()).default([]),
@@ -66,7 +66,7 @@ export const negativeIcpSchema = z.object({
 
 export type NegativeIcp = z.infer<typeof negativeIcpSchema>;
 
-// ─── Confidence Scores ─────────────────────────────────
+// --- Confidence Scores ---
 
 export const confidenceScoresSchema = z.object({
   industry: z.number().min(0).max(1).default(0.3),
@@ -78,7 +78,7 @@ export const confidenceScoresSchema = z.object({
 
 export type ConfidenceScores = z.infer<typeof confidenceScoresSchema>;
 
-// ─── Customer Patterns ─────────────────────────────────
+// --- Customer Patterns ---
 
 export const distributionEntrySchema = z.object({
   value: z.string(),
@@ -99,7 +99,7 @@ export const customerPatternsSchema = z.object({
 
 export type CustomerPatterns = z.infer<typeof customerPatternsSchema>;
 
-// ─── Sales Cycle Length ────────────────────────────────
+// --- Sales Cycle Length ---
 
 export const salesCycleLengthSchema = z.enum([
   "<14d",
@@ -111,7 +111,7 @@ export const salesCycleLengthSchema = z.enum([
 
 export type SalesCycleLength = z.infer<typeof salesCycleLengthSchema>;
 
-// ─── ICP Profile (full structured ICP) ─────────────────
+// --- ICP Profile (full structured ICP) ---
 
 export const icpProfileDataSchema = z.object({
   // User inputs
@@ -146,7 +146,7 @@ export const icpProfileDataSchema = z.object({
 
 export type IcpProfileData = z.infer<typeof icpProfileDataSchema>;
 
-// ─── ICP Inference Input ───────────────────────────────
+// --- ICP Inference Input ---
 
 export const icpInferenceInputSchema = z.object({
   companyDna: z.record(z.string(), z.unknown()),
@@ -163,7 +163,7 @@ export const icpInferenceInputSchema = z.object({
 
 export type IcpInferenceInput = z.infer<typeof icpInferenceInputSchema>;
 
-// ─── Evolution Proposal Change ─────────────────────────
+// --- Evolution Proposal Change ---
 
 export const evolutionChangeSchema = z.object({
   dimension: z.string(),

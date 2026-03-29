@@ -1,5 +1,5 @@
 /**
- * TAM Engine — 5 Signal Detectors.
+ * TAM Engine -- 5 Signal Detectors.
  *
  * Each detector checks for a specific buying signal using existing infrastructure
  * (Jina scraping, Apollo org data, hiring-signal-extractor).
@@ -12,7 +12,7 @@ import { logger } from "@/lib/logger";
 import { detectCommonInvestor, type InvestorInfo, type CommonInvestorResult } from "./detect-investor";
 import { detectLinkedInConnections, type ConnectionSignalResult } from "./detect-connections";
 
-// ─── Types ───────────────────────────────────────────────
+// --- Types ---
 
 export interface SignalSource {
   url: string;
@@ -43,7 +43,7 @@ export interface ApolloPersonData {
   title?: string;
 }
 
-// ─── Sales Role Patterns ─────────────────────────────────
+// --- Sales Role Patterns ---
 
 const SALES_ROLE_PATTERNS = [
   /\b(sdr|bdr|sales\s*development|business\s*development)\b/i,
@@ -54,7 +54,7 @@ const SALES_ROLE_PATTERNS = [
   /\b(revenue|demand\s*gen|growth)\b/i,
 ];
 
-// ─── CRM/Sales Tool Patterns ────────────────────────────
+// --- CRM/Sales Tool Patterns ---
 
 const SALES_TOOL_PATTERNS = [
   { pattern: /hubspot/i, name: "HubSpot" },
@@ -68,7 +68,7 @@ const SALES_TOOL_PATTERNS = [
   { pattern: /linkedin\s*sales\s*navigator/i, name: "LinkedIn Sales Navigator" },
 ];
 
-// ─── Detector 1: Hiring Outbound (0-15pts) ──────────────
+// --- Detector 1: Hiring Outbound (0-15pts) ---
 
 async function detectHiringOutbound(
   domain: string,
@@ -110,7 +110,7 @@ async function detectHiringOutbound(
   return result;
 }
 
-// ─── Detector 2: Sales-Led Growth (0-10pts) ─────────────
+// --- Detector 2: Sales-Led Growth (0-10pts) ---
 
 async function detectSalesLedGrowth(
   domain: string,
@@ -134,7 +134,6 @@ async function detectSalesLedGrowth(
 
     const detectedTools: string[] = [];
 
-    // Check homepage HTML for tool scripts
     if (scrapeResult?.ok) {
       for (const tool of SALES_TOOL_PATTERNS) {
         if (tool.pattern.test(scrapeResult.markdown)) {
@@ -143,7 +142,6 @@ async function detectSalesLedGrowth(
       }
     }
 
-    // Cross-reference with Apollo technologies
     if (orgData?.technologies) {
       for (const tech of orgData.technologies) {
         for (const tool of SALES_TOOL_PATTERNS) {
@@ -168,7 +166,7 @@ async function detectSalesLedGrowth(
   return result;
 }
 
-// ─── Detector 3: Recent Funding (0-10pts) ────────────────
+// --- Detector 3: Recent Funding (0-10pts) ---
 
 function detectRecentFunding(orgData?: ApolloOrgData): SignalResult {
   const result: SignalResult = {
@@ -202,7 +200,7 @@ function detectRecentFunding(orgData?: ApolloOrgData): SignalResult {
   return result;
 }
 
-// ─── Detector 4: Tech Stack Fit (0-10pts) ────────────────
+// --- Detector 4: Tech Stack Fit (0-10pts) ---
 
 function detectTechStackFit(
   orgData?: ApolloOrgData,
@@ -219,7 +217,6 @@ function detectTechStackFit(
 
   if (!orgData?.technologies?.length) return result;
 
-  // Known B2B-relevant tech stacks
   const relevantTech = orgData.technologies.filter((t) => {
     const lower = t.toLowerCase();
     return (
@@ -240,7 +237,7 @@ function detectTechStackFit(
   return result;
 }
 
-// ─── Detector 5: Recent Job Change (0-5pts) ─────────────
+// --- Detector 5: Recent Job Change (0-5pts) ---
 
 function detectRecentJobChange(personData?: ApolloPersonData): SignalResult {
   const result: SignalResult = {
@@ -266,19 +263,14 @@ function detectRecentJobChange(personData?: ApolloPersonData): SignalResult {
 
   result.detected = true;
   result.evidence = `Started current role ${daysAgo} days ago`;
-  result.reasoning = `New in role (< 90 days) — likely evaluating and adopting new tools.`;
+  result.reasoning = `New in role (< 90 days) -- likely evaluating and adopting new tools.`;
   result.points = daysAgo <= 30 ? 5 : 3;
 
   return result;
 }
 
-// ─── Orchestrator ────────────────────────────────────────
+// --- Orchestrator ---
 
-/**
- * Detect all signals for a lead's company.
- * Runs detectors in parallel with individual timeouts.
- * 6 detectors: 5 original + Common Investor.
- */
 export async function detectAllSignals(
   domain: string,
   orgData?: ApolloOrgData,
@@ -294,12 +286,10 @@ export async function detectAllSignals(
     Promise.resolve(detectRecentJobChange(personData)),
   ];
 
-  // Add Common Investor detector if user has investors configured
   if (userInvestors && userInvestors.length > 0) {
     detectors.push(detectCommonInvestor(domain, userInvestors));
   }
 
-  // Add LinkedIn Connection detector if workspace has synced connections
   if (workspaceId) {
     detectors.push(detectLinkedInConnections(domain, workspaceId));
   }
@@ -309,7 +299,7 @@ export async function detectAllSignals(
 
 export type { InvestorInfo, CommonInvestorResult, ConnectionSignalResult };
 
-// ─── Helpers ─────────────────────────────────────────────
+// --- Helpers ---
 
 function timeoutPromise(ms: number): Promise<never> {
   return new Promise((_, reject) =>

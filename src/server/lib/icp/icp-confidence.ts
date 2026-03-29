@@ -1,5 +1,5 @@
 /**
- * ICP Confidence Scorer — Data-richness-based confidence per dimension.
+ * ICP Confidence Scorer -- Data-richness-based confidence per dimension.
  *
  * Computes how confident we are in each ICP dimension based on:
  * - Customer data availability and sample size
@@ -8,62 +8,36 @@
  * - Manual edits (always confidence = 1.0)
  *
  * Confidence scores weight the scoring engine: low-confidence dimensions
- * penalize less for mismatches (don't punish accounts when the ICP itself is uncertain).
+ * penalize less for mismatches.
  */
 
 import type { ConfidenceScores, CustomerPatterns } from "./icp-schema";
 
-// ─── Input ─────────────────────────────────────────────
+// --- Input ---
 
 export interface ConfidenceInput {
-  /** Number of imported customers */
   customerCount: number;
-  /** Customer pattern analysis (if available) */
   customerPatterns: CustomerPatterns | null;
-  /** CompanyDna social proof entries */
   socialProofCount: number;
-  /** CompanyDna case studies */
   caseStudyCount: number;
-  /** CompanyDna client portfolio size */
   clientPortfolioCount: number;
-  /** User provided NL description */
   hasNlDescription: boolean;
-  /** User provided ACV */
   hasAcv: boolean;
-  /** User provided win/loss reasons */
   hasWinLoss: boolean;
-  /** ICP source — "manual" means user explicitly set values */
   source: "onboarding" | "evolution" | "manual";
-  /** Which dimensions the user manually edited (override to 1.0) */
   manualOverrides?: Array<"industry" | "size" | "title" | "geo">;
 }
 
-// ─── Confidence Computation ────────────────────────────
+// --- Confidence Computation ---
 
-/**
- * Compute confidence scores for each ICP dimension.
- *
- * Each dimension starts at a base (0.2) and accumulates bonuses:
- * - Customer data (N≥30): +0.4 for that dimension
- * - Customer data (N≥10): +0.25 for that dimension
- * - Customer data (N≥5): +0.15 for that dimension
- * - CompanyDna social proof: +0.15
- * - CompanyDna case studies: +0.1
- * - NL description: +0.1
- * - ACV: +0.05 (for size dimension specifically)
- * - Win/loss reasons: +0.05
- * - Manual edit: override to 1.0
- */
 export function computeConfidence(input: ConfidenceInput): ConfidenceScores {
   const BASE = 0.2;
   const manualSet = new Set(input.manualOverrides ?? []);
 
-  // If source is "manual", everything the user touched is 1.0
   if (input.source === "manual" && manualSet.size === 0) {
     return { industry: 1.0, size: 1.0, title: 1.0, geo: 1.0, overall: 1.0 };
   }
 
-  // ── Industry confidence ──
   let industry = BASE;
   if (input.customerPatterns) {
     const indCount = input.customerPatterns.industryDist
@@ -78,7 +52,6 @@ export function computeConfidence(input: ConfidenceInput): ConfidenceScores {
   if (input.hasNlDescription) industry += 0.1;
   if (manualSet.has("industry")) industry = 1.0;
 
-  // ── Size confidence ──
   let size = BASE;
   if (input.customerPatterns) {
     const sizeCount = input.customerPatterns.sizeDist
@@ -92,20 +65,16 @@ export function computeConfidence(input: ConfidenceInput): ConfidenceScores {
   if (input.hasNlDescription) size += 0.05;
   if (manualSet.has("size")) size = 1.0;
 
-  // ── Title confidence ──
   let title = BASE;
-  // Titles are primarily inferred from CompanyDna targetBuyers, not customers
   if (input.socialProofCount >= 2) title += 0.15;
   if (input.clientPortfolioCount >= 5) title += 0.1;
   if (input.caseStudyCount >= 2) title += 0.1;
   if (input.hasNlDescription) title += 0.1;
   if (input.hasWinLoss) title += 0.1;
-  // Customer data gives a small title boost (buyer persona patterns)
   if (input.customerCount >= 20) title += 0.15;
   else if (input.customerCount >= 5) title += 0.1;
   if (manualSet.has("title")) title = 1.0;
 
-  // ── Geography confidence ──
   let geo = BASE;
   if (input.customerPatterns) {
     const geoCount = input.customerPatterns.geoDist
@@ -118,13 +87,11 @@ export function computeConfidence(input: ConfidenceInput): ConfidenceScores {
   if (input.hasNlDescription) geo += 0.05;
   if (manualSet.has("geo")) geo = 1.0;
 
-  // Clamp to [0, 1]
   industry = Math.min(1.0, industry);
   size = Math.min(1.0, size);
   title = Math.min(1.0, title);
   geo = Math.min(1.0, geo);
 
-  // Overall = weighted average (industry and size matter most for outbound)
   const overall = Math.min(
     1.0,
     industry * 0.3 + size * 0.25 + title * 0.25 + geo * 0.2,

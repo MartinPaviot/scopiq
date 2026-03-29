@@ -1,5 +1,5 @@
 /**
- * ICP Customer Analyzer — Deterministic firmographic clustering.
+ * ICP Customer Analyzer -- Deterministic firmographic clustering.
  *
  * Pure computation (zero LLM calls): takes CustomerImportEntry[] rows
  * and extracts distribution patterns for industry, company size,
@@ -11,7 +11,7 @@
 
 import type { CustomerPatterns, DistributionEntry } from "./icp-schema";
 
-// ─── Input type (matches CustomerImportEntry fields) ───
+// --- Input type (matches CustomerImportEntry fields) ---
 
 export interface CustomerEntry {
   companyName: string;
@@ -22,7 +22,7 @@ export interface CustomerEntry {
   country?: string | null;
 }
 
-// ─── Size Buckets (matching Apollo ranges) ─────────────
+// --- Size Buckets (matching Apollo ranges) ---
 
 const SIZE_BUCKETS = [
   { label: "1-10", min: 1, max: 10 },
@@ -43,7 +43,7 @@ function getSizeBucket(count: number): string {
   return "Unknown";
 }
 
-// ─── Distribution Builder ──────────────────────────────
+// --- Distribution Builder ---
 
 function buildDistribution(values: string[]): DistributionEntry[] {
   if (values.length === 0) return [];
@@ -65,7 +65,7 @@ function buildDistribution(values: string[]): DistributionEntry[] {
     .sort((a, b) => b.count - a.count);
 }
 
-// ─── Deal Value Stats ──────────────────────────────────
+// --- Deal Value Stats ---
 
 function computeDealValueStats(values: number[]): {
   avg: number | null;
@@ -84,12 +84,8 @@ function computeDealValueStats(values: number[]): {
   return { avg, median };
 }
 
-// ─── Main Analyzer ─────────────────────────────────────
+// --- Main Analyzer ---
 
-/**
- * Analyze customer import entries to extract firmographic patterns.
- * Pure computation — no API calls, no LLM.
- */
 export function analyzeCustomerPatterns(
   entries: CustomerEntry[],
 ): CustomerPatterns {
@@ -104,26 +100,22 @@ export function analyzeCustomerPatterns(
     };
   }
 
-  // Industry distribution
   const industries = entries
     .map((e) => e.industry)
     .filter((i): i is string => !!i);
   const industryDist = buildDistribution(industries);
 
-  // Size distribution (bucketed)
   const sizes = entries
     .map((e) => e.employeeCount)
     .filter((c): c is number => c != null && c > 0)
     .map((c) => getSizeBucket(c));
   const sizeDist = buildDistribution(sizes);
 
-  // Geography distribution
   const geos = entries
     .map((e) => e.country)
     .filter((c): c is string => !!c);
   const geoDist = buildDistribution(geos);
 
-  // Deal value stats
   const dealValues = entries
     .map((e) => e.dealValue)
     .filter((v): v is number => v != null && v > 0);
@@ -139,10 +131,6 @@ export function analyzeCustomerPatterns(
   };
 }
 
-/**
- * Extract dominant patterns from customer data for ICP grounding.
- * Returns the top N entries per dimension that represent >= threshold% of customers.
- */
 export function getDominantPatterns(
   patterns: CustomerPatterns,
   topN: number = 3,

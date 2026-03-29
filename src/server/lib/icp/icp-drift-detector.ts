@@ -1,5 +1,5 @@
 /**
- * ICP Drift Detector — Measures how much an ICP has changed.
+ * ICP Drift Detector -- Measures how much an ICP has changed.
  *
  * Uses Jaccard distance for set-based dimensions (industries, geos)
  * and normalized absolute difference for range dimensions (employee range).
@@ -9,7 +9,7 @@
 
 import type { IcpProfileData } from "./icp-schema";
 
-// ─── Types ─────────────────────────────────────────────
+// --- Types ---
 
 export interface DriftResult {
   /** Overall drift score (0-1). 0 = identical, 1 = completely different. */
@@ -22,7 +22,7 @@ export interface DriftResult {
   dimensionDrift: Record<string, number>;
 }
 
-// ─── Jaccard Distance ──────────────────────────────────
+// --- Jaccard Distance ---
 
 function jaccardDistance(a: string[], b: string[]): number {
   if (a.length === 0 && b.length === 0) return 0;
@@ -41,7 +41,7 @@ function jaccardDistance(a: string[], b: string[]): number {
   return 1 - intersection / union;
 }
 
-// ─── Normalized Range Distance ─────────────────────────
+// --- Normalized Range Distance ---
 
 function rangeDistance(
   current: { min: number; max: number; sweetSpot: number },
@@ -51,14 +51,11 @@ function rangeDistance(
   return Math.abs(current.sweetSpot - proposed.sweetSpot) / maxVal;
 }
 
-// ─── Main Function ─────────────────────────────────────
+// --- Main Function ---
 
 const SIGNIFICANCE_THRESHOLD = 0.3;
 const DIMENSION_THRESHOLD = 0.2;
 
-/**
- * Compute drift between two ICP profiles.
- */
 export function computeDrift(
   current: IcpProfileData,
   proposed: IcpProfileData,
@@ -66,19 +63,16 @@ export function computeDrift(
   const dimensionDrift: Record<string, number> = {};
   const changedDimensions: string[] = [];
 
-  // Industry drift (Jaccard)
   dimensionDrift.industry = jaccardDistance(current.industries, proposed.industries);
   if (dimensionDrift.industry > DIMENSION_THRESHOLD) {
     changedDimensions.push("industries");
   }
 
-  // Geography drift (Jaccard)
   dimensionDrift.geo = jaccardDistance(current.geographies, proposed.geographies);
   if (dimensionDrift.geo > DIMENSION_THRESHOLD) {
     changedDimensions.push("geographies");
   }
 
-  // Title drift (Jaccard on role titles)
   const currentTitles = current.roles.map((r) => r.title);
   const proposedTitles = proposed.roles.map((r) => r.title);
   dimensionDrift.title = jaccardDistance(currentTitles, proposedTitles);
@@ -86,20 +80,16 @@ export function computeDrift(
     changedDimensions.push("roles");
   }
 
-  // Size drift (normalized range)
   dimensionDrift.size = rangeDistance(current.employeeRange, proposed.employeeRange);
   if (dimensionDrift.size > DIMENSION_THRESHOLD) {
     changedDimensions.push("employeeRange");
   }
 
-  // Keyword drift (Jaccard)
   dimensionDrift.keyword = jaccardDistance(current.keywords, proposed.keywords);
   if (dimensionDrift.keyword > DIMENSION_THRESHOLD) {
     changedDimensions.push("keywords");
   }
 
-  // Weighted overall drift
-  // Industry and size matter most for outbound targeting
   const driftScore =
     dimensionDrift.industry * 0.3 +
     dimensionDrift.size * 0.25 +

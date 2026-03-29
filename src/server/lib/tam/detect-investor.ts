@@ -1,17 +1,15 @@
 /**
- * TAM Signal Detector — Common Investor.
+ * TAM Signal Detector -- Common Investor.
  *
  * Detects shared investors between the user's company and a prospect.
  * Uses Crunchbase org pages via Jina Reader (free).
- *
- * Returns investor names, reasoning, and source URLs.
  */
 
 import { scrapeViaJina } from "@/server/lib/connectors/jina";
 import { logger } from "@/lib/logger";
 import type { SignalResult } from "./detect-signals";
 
-// ─── Types ──────────────────────────────────────────────
+// --- Types ---
 
 export interface InvestorInfo {
   name: string;
@@ -24,7 +22,7 @@ export interface CommonInvestorResult extends SignalResult {
   investorSources: Array<{ url: string; title: string; investorName: string }>;
 }
 
-// ─── Investor Extraction ────────────────────────────────
+// --- Investor Extraction ---
 
 const INVESTOR_PATTERNS = [
   /(?:backed by|funded by|invested by|investors?(?:\s+include)?)[:\s]+([^\n.]+)/gi,
@@ -47,9 +45,6 @@ const ACCELERATOR_NAMES = new Set([
   "plug and play", "alchemist", "seedcamp", "entrepreneur first",
 ]);
 
-/**
- * Extract investor names from Crunchbase-scraped markdown.
- */
 function extractInvestors(markdown: string): InvestorInfo[] {
   const investors: InvestorInfo[] = [];
   const seen = new Set<string>();
@@ -59,7 +54,6 @@ function extractInvestors(markdown: string): InvestorInfo[] {
     pattern.lastIndex = 0;
     while ((match = pattern.exec(markdown)) !== null) {
       const raw = match[1];
-      // Split by common separators
       const names = raw.split(/[,&]|(?:\s+and\s+)/i).map((n) => n.trim()).filter((n) => n.length > 1 && n.length < 60);
       for (const name of names) {
         const normalized = name.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
@@ -75,7 +69,6 @@ function extractInvestors(markdown: string): InvestorInfo[] {
     }
   }
 
-  // Also check for known VC names directly in the markdown
   const lowerMarkdown = markdown.toLowerCase();
   for (const vcName of KNOWN_VC_NAMES) {
     if (lowerMarkdown.includes(vcName) && !seen.has(vcName)) {
@@ -91,7 +84,7 @@ function extractInvestors(markdown: string): InvestorInfo[] {
   return investors;
 }
 
-// ─── Crunchbase Scraper ─────────────────────────────────
+// --- Crunchbase Scraper ---
 
 function domainToSlug(domain: string): string {
   return domain.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-]/gi, "-").toLowerCase();
@@ -121,11 +114,8 @@ async function scrapeInvestorsForDomain(domain: string): Promise<{
   };
 }
 
-// ─── Main Detector ──────────────────────────────────────
+// --- Main Detector ---
 
-/**
- * Detect common investors between user's company and a prospect.
- */
 export async function detectCommonInvestor(
   domain: string,
   userInvestors: InvestorInfo[],
@@ -142,7 +132,7 @@ export async function detectCommonInvestor(
   };
 
   if (userInvestors.length === 0) {
-    result.reasoning = "No user investors configured — set them via chat or onboarding";
+    result.reasoning = "No user investors configured -- set them via chat or onboarding";
     return result;
   }
 
@@ -154,7 +144,6 @@ export async function detectCommonInvestor(
       return result;
     }
 
-    // Cross-reference: find shared investors
     const userInvestorNames = new Set(
       userInvestors.map((i) => i.name.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim()),
     );
@@ -168,7 +157,7 @@ export async function detectCommonInvestor(
         common.push(prospectInvestor.name);
         sources.push({
           url: sourceUrl,
-          title: `Crunchbase — ${domain}`,
+          title: `Crunchbase -- ${domain}`,
           investorName: prospectInvestor.name,
         });
       }
@@ -183,7 +172,7 @@ export async function detectCommonInvestor(
     result.commonInvestors = common;
     result.investorSources = sources;
     result.evidence = `Shared investor${common.length > 1 ? "s" : ""}: ${common.join(", ")}`;
-    result.sources = [{ url: sourceUrl, title: `Crunchbase — ${domain}` }];
+    result.sources = [{ url: sourceUrl, title: `Crunchbase -- ${domain}` }];
     result.reasoning = `${domain} shares investor${common.length > 1 ? "s" : ""} with your company: ${common.join(", ")}. This creates a warm connection path.`;
     result.points = Math.min(common.length * 8, 15);
 

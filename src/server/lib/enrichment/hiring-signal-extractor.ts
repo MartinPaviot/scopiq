@@ -9,14 +9,15 @@
  * Returns StructuredSignal[] that merge with LLM-extracted hiringSignals.
  */
 
-/** Structured signal with optional date/source for recency weighting */
+// --- StructuredSignal type (inlined to avoid dependency on summarizer) ---
+
 export interface StructuredSignal {
   detail: string;
   date: string | null;
   source: string | null;
 }
 
-// ─── Role/seniority patterns ────────────────────────────
+// --- Role/seniority patterns ---
 
 const SENIORITY_KEYWORDS = [
   "senior", "sr.", "lead", "principal", "staff",
@@ -33,13 +34,10 @@ const DEPARTMENT_KEYWORDS = [
   "business development", "partnerships", "research",
 ] as const;
 
-// Common job title patterns — broad enough to catch variations
+// Common job title patterns
 const JOB_TITLE_PATTERNS = [
-  // Pattern: "Role Title" as a standalone line or list item
-  /^[\s*•\-–—]*([A-Z][A-Za-z &/,.\-()]+(?:Engineer|Developer|Designer|Manager|Director|Lead|Architect|Analyst|Specialist|Coordinator|Associate|Consultant|Strategist|Representative|Executive|Officer|Administrator|Recruiter|Writer|Editor|Scientist|Researcher|Intern))\s*$/gim,
-  // Pattern: role with seniority prefix
-  /^[\s*•\-–—]*((?:Senior|Jr\.?|Junior|Lead|Principal|Staff|Head of|VP of|Director of)\s+[A-Z][A-Za-z &/,.\-()]+)\s*$/gim,
-  // Pattern: "We're looking for a [Role]" / "Hiring [Role]"
+  /^[\s*\u2022\-\u2013\u2014]*([A-Z][A-Za-z &/,.\-()]+(?:Engineer|Developer|Designer|Manager|Director|Lead|Architect|Analyst|Specialist|Coordinator|Associate|Consultant|Strategist|Representative|Executive|Officer|Administrator|Recruiter|Writer|Editor|Scientist|Researcher|Intern))\s*$/gim,
+  /^[\s*\u2022\-\u2013\u2014]*((?:Senior|Jr\.?|Junior|Lead|Principal|Staff|Head of|VP of|Director of)\s+[A-Z][A-Za-z &/,.\-()]+)\s*$/gim,
   /(?:hiring|looking for|seeking|recruiting|we need)\s+(?:a |an )?([A-Z][A-Za-z &/,.\-()]{5,50})/gi,
 ] as const;
 
@@ -53,19 +51,14 @@ const GROWTH_PATTERNS = [
   /join\s+(?:a |our )?(?:team|company)\s+of\s+(\d+)/i,
 ] as const;
 
-// ─── Section extraction ─────────────────────────────────
+// --- Section extraction ---
 
-/**
- * Extracts the CAREERS section from combined multi-page markdown.
- * Returns null if no careers section found.
- */
 export function extractCareersSection(combinedMarkdown: string): string | null {
   const marker = /^---\s*CAREERS\s*---$/im;
   const match = marker.exec(combinedMarkdown);
   if (!match) return null;
 
   const start = match.index + match[0].length;
-  // Find next section marker or end of string
   const nextSection = /^---\s*[A-Z/]+\s*---$/im.exec(combinedMarkdown.slice(start));
   const end = nextSection ? start + nextSection.index : combinedMarkdown.length;
 
@@ -73,23 +66,17 @@ export function extractCareersSection(combinedMarkdown: string): string | null {
   return section.length > 20 ? section : null;
 }
 
-// ─── Signal extraction ──────────────────────────────────
+// --- Signal extraction ---
 
-/**
- * Extracts job titles from careers page markdown.
- * Returns deduplicated, cleaned role titles.
- */
 export function extractJobTitles(markdown: string): string[] {
   const titles = new Set<string>();
 
   for (const pattern of JOB_TITLE_PATTERNS) {
-    // Reset regex state for each pattern
     const regex = new RegExp(pattern.source, pattern.flags);
     let m: RegExpExecArray | null;
     while ((m = regex.exec(markdown)) !== null) {
       const title = m[1]?.trim();
       if (title && title.length >= 5 && title.length <= 80) {
-        // Skip common false positives
         if (/^(About|Our|The|We|Join|Apply|Learn|View|See|Read|More|Back|Next|Home|Contact)/i.test(title)) continue;
         if (/\.(com|org|io|ai|co)\b/i.test(title)) continue;
         titles.add(title);
@@ -100,9 +87,6 @@ export function extractJobTitles(markdown: string): string[] {
   return [...titles];
 }
 
-/**
- * Detects seniority levels being recruited.
- */
 function detectSeniorityLevels(titles: string[]): string[] {
   const levels = new Set<string>();
   for (const title of titles) {
@@ -117,9 +101,6 @@ function detectSeniorityLevels(titles: string[]): string[] {
   return [...levels];
 }
 
-/**
- * Detects departments being hired for based on job titles.
- */
 function detectDepartments(titles: string[]): string[] {
   const depts = new Set<string>();
   const combined = titles.join(" ").toLowerCase();
@@ -131,9 +112,6 @@ function detectDepartments(titles: string[]): string[] {
   return [...depts];
 }
 
-/**
- * Detects growth signals from careers page content.
- */
 function detectGrowthSignals(markdown: string): string[] {
   const signals: string[] = [];
   for (const pattern of GROWTH_PATTERNS) {
@@ -145,14 +123,8 @@ function detectGrowthSignals(markdown: string): string[] {
   return signals;
 }
 
-// ─── Main extractor ─────────────────────────────────────
+// --- Main extractor ---
 
-/**
- * Extracts structured hiring signals from careers page markdown.
- * Zero LLM cost — pure regex/heuristic extraction.
- *
- * Returns StructuredSignal[] ready to merge with LLM-extracted hiringSignals.
- */
 export function extractHiringSignals(careersMarkdown: string): StructuredSignal[] {
   if (!careersMarkdown || careersMarkdown.trim().length < 30) return [];
 
@@ -162,7 +134,6 @@ export function extractHiringSignals(careersMarkdown: string): StructuredSignal[
   const seniorityLevels = detectSeniorityLevels(titles);
   const growthSignals = detectGrowthSignals(careersMarkdown);
 
-  // Signal 1: Overall hiring scope
   if (titles.length > 0) {
     const deptInfo = departments.length > 0 ? ` across ${departments.join(", ")}` : "";
     const seniorityInfo = seniorityLevels.length > 0 ? ` (${seniorityLevels.join(", ")}-level)` : "";
@@ -173,7 +144,6 @@ export function extractHiringSignals(careersMarkdown: string): StructuredSignal[
     });
   }
 
-  // Signal 2: Specific role titles (top 5 most relevant)
   if (titles.length > 0) {
     const topTitles = titles.slice(0, 5);
     signals.push({
@@ -183,7 +153,6 @@ export function extractHiringSignals(careersMarkdown: string): StructuredSignal[
     });
   }
 
-  // Signal 3: Growth indicators
   for (const growth of growthSignals.slice(0, 2)) {
     signals.push({
       detail: growth,
@@ -192,7 +161,6 @@ export function extractHiringSignals(careersMarkdown: string): StructuredSignal[
     });
   }
 
-  // Signal 4: Multi-department hiring = strong growth signal
   if (departments.length >= 3) {
     signals.push({
       detail: `Expanding across ${departments.length} departments: ${departments.join(", ")}`,
@@ -204,13 +172,8 @@ export function extractHiringSignals(careersMarkdown: string): StructuredSignal[
   return signals;
 }
 
-// ─── Merge with LLM signals ────────────────────────────
+// --- Merge with LLM signals ---
 
-/**
- * Merges deterministic hiring signals with LLM-extracted signals.
- * Deduplicates by checking if the LLM already captured a similar signal
- * (fuzzy match on role titles / department names).
- */
 export function mergeHiringSignals(
   llmSignals: StructuredSignal[],
   extractedSignals: StructuredSignal[],
@@ -222,12 +185,9 @@ export function mergeHiringSignals(
 
   for (const extracted of extractedSignals) {
     const detailLower = extracted.detail.toLowerCase();
-    // Check if LLM already has a similar signal
     const isDuplicate = llmSignals.some((llm) => {
       const llmLower = llm.detail.toLowerCase();
-      // Same source = likely same signal
       if (llmLower.includes("careers page") && detailLower.includes("careers page")) {
-        // Check for overlapping content (role names, department names)
         const words = detailLower.split(/\s+/).filter((w) => w.length > 4);
         const matchCount = words.filter((w) => llmLower.includes(w)).length;
         return matchCount >= 2;

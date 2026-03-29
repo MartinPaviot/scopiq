@@ -1,5 +1,5 @@
 /**
- * TAM Engine — ICP Inference from Website Content.
+ * TAM Engine -- ICP Inference from Website Content.
  *
  * Uses Mistral Large to analyze raw website content and infer
  * a structured ICP optimized for Apollo search filters.
@@ -13,7 +13,7 @@ import { mistralClient } from "@/server/lib/llm/mistral-client";
 import { logger } from "@/lib/logger";
 import type { ApolloOrgSearchParams } from "@/server/lib/apollo/client";
 
-// ─── Schema ─────────────────────────────────────────────
+// --- Schema ---
 
 const tamSegmentSchema = z.object({
   name: z.string(),
@@ -45,26 +45,25 @@ const tamIcpSchema = z.object({
 export type TamICP = z.infer<typeof tamIcpSchema>;
 export type TamSegment = z.infer<typeof tamSegmentSchema>;
 
-// ─── System Prompt ──────────────────────────────────────
+// --- System Prompt ---
 
 const INFER_ICP_SYSTEM = `You are a senior GTM consultant with 15 years in B2B SaaS sales. Analyze this website to infer the IDEAL CUSTOMER PROFILE for outbound prospecting.
 
 Your analysis must cover:
 
-1. PRODUCT — What does this company sell? What problem? How do they monetize?
+1. PRODUCT -- What does this company sell? What problem? How do they monetize?
    Pricing tier: "plg" (<$50/mo), "mid_market" ($50-500/mo), "enterprise" (>$500/mo)
 
-2. BUYER PROFILE — Who DECIDES to buy? (exact LinkedIn titles)
+2. BUYER PROFILE -- Who DECIDES to buy? (exact LinkedIn titles)
    Who USES the product? Who INFLUENCES the decision?
 
-3. MARKET FIT — Which INDUSTRIES buy this? What COMPANY SIZE?
+3. MARKET FIT -- Which INDUSTRIES buy this? What COMPANY SIZE?
    Justify size: "20-200 because pricing at $99/mo is too expensive for <20 and too small for >200 who want enterprise"
    Which COUNTRIES? (check site language, office locations, currencies, case studies)
 
-4. BUYING SIGNALS — What events trigger purchase?
-   "Company hires VP Sales" → needs outreach tools. "Raised Series A" → has budget.
+4. BUYING SIGNALS -- What events trigger purchase?
 
-5. COMPETITORS — Name 5-10 direct and indirect competitors.
+5. COMPETITORS -- Name 5-10 direct and indirect competitors.
 
 Return ONLY valid JSON:
 {
@@ -95,24 +94,18 @@ Return ONLY valid JSON:
 }
 
 STRICT RULES:
-- titles: EXACT LinkedIn titles ("VP Sales" not "Vice President of Sales")
+- titles: EXACT LinkedIn titles
 - seniorities: ONLY Apollo values: owner, founder, c_suite, partner, vp, head, director, manager, senior, entry, intern
-- employee_ranges: format "min,max" with comma. Valid: "1,10", "11,20", "21,50", "51,100", "101,200", "201,500", "501,1000", "1001,5000", "5001,10000", "10001,"
-- geos: full country names ("United States" not "USA", "United Kingdom" not "UK")
-- keywords: lowercase terms Apollo uses to tag companies ("cold email", "saas", "fintech")
-- industries: Apollo industry categories — be specific ("saas" not "technology")
-- JUSTIFY every choice in "reasoning" — if you can't justify it, it's probably wrong
-- 2-5 segments, each = a distinct buyer persona
+- employee_ranges: format "min,max" with comma
+- geos: full country names
+- keywords: lowercase terms Apollo uses to tag companies
+- industries: Apollo industry categories
+- JUSTIFY every choice in "reasoning"
+- 2-5 segments
 - JSON only, no markdown.`;
 
-// ─── Main Function ──────────────────────────────────────
+// --- Main Function ---
 
-/**
- * Infer ICP from website content using Mistral Large.
- * Returns Apollo-compatible filters and segments.
- *
- * Retries once with a stricter prompt if the first attempt returns invalid JSON.
- */
 export async function inferTamICP(
   siteUrl: string,
   content: string,
@@ -131,7 +124,6 @@ export async function inferTamICP(
       temperature: 0.3,
     });
 
-    // Validate minimum viable ICP
     if (result.titles.length === 0) {
       logger.warn("[tam/icp] ICP has no titles, retrying with stricter prompt");
       return retryInference(siteUrl, content, workspaceId);
@@ -152,8 +144,6 @@ export async function inferTamICP(
     return retryInference(siteUrl, content, workspaceId);
   }
 }
-
-// ─── Retry with Stricter Prompt ─────────────────────────
 
 async function retryInference(
   siteUrl: string,
@@ -185,15 +175,8 @@ If you cannot determine the ICP from the content, make reasonable assumptions fo
   });
 }
 
-// ─── Infer from Company DNA (no scraping) ───────────────
+// --- Infer from Company DNA (no scraping) ---
 
-/**
- * Derive TamICP from an existing Company DNA analysis.
- * This avoids re-scraping the website — uses the rich Company DNA
- * that was already built in the onboarding Step 1.
- *
- * Falls back to LLM inference if the Company DNA is too sparse.
- */
 export interface CustomerContext {
   companyName: string;
   domain?: string;
@@ -209,7 +192,6 @@ export async function inferTamICPFromDna(
   workspaceId: string,
   existingCustomers?: CustomerContext[],
 ): Promise<TamICP> {
-  // Build a rich summary from Company DNA fields
   const parts: string[] = [];
 
   if (companyDna.oneLiner) {
@@ -252,7 +234,6 @@ export async function inferTamICPFromDna(
     if (diffs.length) parts.push(`Differentiators: ${diffs.join("; ")}`);
   }
 
-  // Inject existing customer data to ground ICP in reality
   if (existingCustomers?.length) {
     const customerLines = existingCustomers.slice(0, 50).map((c) => {
       const fields = [c.companyName];
@@ -262,7 +243,7 @@ export async function inferTamICPFromDna(
       if (c.country) fields.push(c.country);
       return `- ${fields.join(" | ")}`;
     });
-    parts.push(`\nEXISTING CUSTOMERS (ground truth — ICP should match these patterns):\n${customerLines.join("\n")}`);
+    parts.push(`\nEXISTING CUSTOMERS (ground truth -- ICP should match these patterns):\n${customerLines.join("\n")}`);
   }
 
   const content = parts.join("\n");
@@ -277,12 +258,8 @@ export async function inferTamICPFromDna(
   return inferTamICP(siteUrl, content, workspaceId);
 }
 
-// ─── Helpers ────────────────────────────────────────────
+// --- Helpers ---
 
-/**
- * Convert TamICP to Apollo People Search filters.
- * Merges all segments into a single broad query.
- */
 export function icpToApolloFilters(icp: TamICP): {
   person_titles: string[];
   person_seniorities: string[];
@@ -300,15 +277,7 @@ export function icpToApolloFilters(icp: TamICP): {
   };
 }
 
-/**
- * Convert TamICP to Apollo Organization Search filters.
- * Maps ICP fields to the org search endpoint params:
- *  - industries + keywords → q_organization_keyword_tags
- *  - companySize → organization_num_employees_ranges
- *  - geos → organization_locations
- */
 export function icpToOrgFilters(icp: TamICP): ApolloOrgSearchParams {
-  // Combine industries + keywords + segment industries for broad coverage
   const keywordTags = new Set<string>();
   for (const ind of icp.industries) keywordTags.add(ind);
   for (const kw of (icp.keywords ?? [])) keywordTags.add(kw);
