@@ -391,14 +391,15 @@ export default function SetupPage() {
 
   // Redirect to market as soon as accounts start loading
   const redirectedRef = useRef(false);
-  if (
-    !redirectedRef.current &&
-    tamProgress?.phase &&
-    ["loading-top", "loading-more", "scoring", "contacts", "signals", "complete"].includes(tamProgress.phase)
-  ) {
-    redirectedRef.current = true;
-    router.push("/market");
-  }
+  const shouldRedirect = !redirectedRef.current && tamProgress?.phase &&
+    ["loading-top", "loading-more", "scoring", "contacts", "signals", "complete"].includes(tamProgress.phase);
+
+  useEffect(() => {
+    if (shouldRedirect) {
+      redirectedRef.current = true;
+      router.push("/market");
+    }
+  }, [shouldRedirect, router]);
 
   // Check completed sources
   type Source = { id: string; type: string; status: string; inputUrl?: string | null; fileName?: string | null; rawContent?: string | null };

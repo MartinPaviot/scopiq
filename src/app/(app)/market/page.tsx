@@ -338,6 +338,21 @@ export default function MarketPage() {
       : <CaretUp className="size-2.5" />;
   };
 
+  // Refetch accounts periodically during build (must be before any conditional return)
+  const buildPhase = buildPoll.data?.phase ?? build?.phase;
+  const buildLoaded = buildPoll.data?.loadedCount ?? build?.loadedCount ?? 0;
+  const buildTotal = buildPoll.data?.totalCount ?? build?.totalCount ?? 0;
+  const buildScored = buildPoll.data?.scoredCount ?? build?.scoredCount ?? 0;
+
+  useEffect(() => {
+    if (!isBuilding) return;
+    const interval = setInterval(() => {
+      accountsQuery.refetch();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBuilding]);
+
   // No build state
   if (!build) {
     if (buildQuery.isLoading) {
@@ -355,21 +370,6 @@ export default function MarketPage() {
       </div>
     );
   }
-
-  // Refetch accounts periodically during build
-  const buildPhase = buildPoll.data?.phase ?? build?.phase;
-  const buildLoaded = buildPoll.data?.loadedCount ?? build?.loadedCount ?? 0;
-  const buildTotal = buildPoll.data?.totalCount ?? build?.totalCount ?? 0;
-  const buildScored = buildPoll.data?.scoredCount ?? build?.scoredCount ?? 0;
-
-  useEffect(() => {
-    if (!isBuilding) return;
-    const interval = setInterval(() => {
-      accountsQuery.refetch();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBuilding]);
 
   return (
     <div className="flex flex-col h-screen">
