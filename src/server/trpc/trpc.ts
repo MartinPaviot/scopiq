@@ -1,0 +1,23 @@
+import { initTRPC, TRPCError } from "@trpc/server";
+import type { Context } from "./context";
+
+const t = initTRPC.context<Context>().create();
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.userId || !ctx.workspaceId) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authentication required",
+    });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+    },
+  });
+});
