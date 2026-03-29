@@ -1,10 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Target, ArrowRight, ArrowsClockwise, PencilSimple } from "@phosphor-icons/react";
+import { useState } from "react";
+import { Target, ArrowRight, ArrowsClockwise, PencilSimple, FloppyDisk, X } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfidenceBar } from "@/components/icp/confidence-bar";
+import { TagEditor } from "@/components/icp/tag-editor";
+import { RangeEditor } from "@/components/icp/range-editor";
 import { trpc } from "@/lib/trpc-client";
 import { toast } from "sonner";
 
@@ -75,9 +78,33 @@ function Section({
 
 export default function IcpPage() {
   const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState<Record<string, unknown> | null>(null);
+
   const icpQuery = trpc.icp.getActive.useQuery();
   const apolloQuery = trpc.icp.getApolloPreview.useQuery();
   const workspaceQuery = trpc.workspace.getSettings.useQuery();
+  const proposalsQuery = trpc.icp.getProposals.useQuery();
+
+  const updateMutation = trpc.icp.update.useMutation({
+    onSuccess: () => {
+      toast.success("ICP updated");
+      setEditing(false);
+      setEditData(null);
+      icpQuery.refetch();
+      apolloQuery.refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const respondMutation = trpc.icp.respondToProposal.useMutation({
+    onSuccess: () => {
+      toast.success("Proposal processed");
+      proposalsQuery.refetch();
+      icpQuery.refetch();
+    },
+  });
+
   const tamMutation = trpc.tam.startBuild.useMutation({
     onSuccess: () => {
       toast.success("TAM build started!");
@@ -87,7 +114,31 @@ export default function IcpPage() {
   });
 
   const icp = icpQuery.data;
-  const companyUrl = workspaceQuery.data?.companyUrl ?? "";
+  const companyUrl = (workspaceQuery.data as Record<string, string> | undefined)?.companyUrl ?? "";
+  const proposals = (proposalsQuery.data ?? []) as Array<{ id: string; changes: unknown; sampleSize: number; createdAt: string }>;
+
+  const startEditing = () => {
+    if (!icp?.data) return;
+    setEditData({ ...icp.data });
+    setEditing(true);
+  };
+
+  const saveEdits = () => {
+    if (!icp?.id || !editData) return;
+    updateMutation.mutate({
+      profileId: icp.id,
+      industries: editData.industries,
+      geographies: editData.geographies,
+      keywords: editData.keywords,
+      competitors: editData.competitors,
+      disqualifiers: editData.disqualifiers,
+      employeeRange: editData.employeeRange,
+    });
+  };
+
+  const updateField = (field: string, value: unknown) => {
+    setEditData((prev) => prev ? { ...prev, [field]: value } : null);
+  };
 
   if (icpQuery.isLoading) {
     return (
@@ -129,19 +180,35 @@ export default function IcpPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => router.push("/setup")}>
-              <ArrowsClockwise className="size-3.5" />
-              Regenerate
-            </Button>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => tamMutation.mutate({ siteUrl: companyUrl || "https://example.com" })}
-              disabled={tamMutation.isPending}
-            >
-              {tamMutation.isPending ? "Building..." : "Build TAM"}
-              <ArrowRight className="size-3.5" />
-            </Button>
+            {editing ? (
+              <>
+                <Button variant="outline" size="sm" onClick={() => { setEditing(false); setEditData(null); }}>
+                  <X className="size-3.5" /> Cancel
+                </Button>
+                <Button size="sm" onClick={saveEdits} disabled={updateMutation.isPending}>
+                  <FloppyDisk className="size-3.5" />
+                  {updateMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={startEditing}>
+                  <PencilSimple className="size-3.5" /> Edit
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => router.push("/setup")}>
+                  <ArrowsClockwise className="size-3.5" /> Regenerate
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => tamMutation.mutate({ siteUrl: companyUrl || "https://example.com" })}
+                  disabled={tamMutation.isPending}
+                >
+                  {tamMutation.isPending ? "Building..." : "Build TAM"}
+                  <ArrowRight className="size-3.5" />
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -169,10 +236,27 @@ export default function IcpPage() {
 
         <div className="grid md:grid-cols-2 gap-4">
           <Section title="Industries" confidence={conf.industry}>
-            <TagList items={d.industries as string[] ?? []} color="bg-blue-500/10 text-blue-700" />
+            {editing ? (
+              <TagEditor
+                tags={(editData?.industries ?? d.industries ?? []) as string[]}
+                onChange={(v) => updateField("industries", v)}
+                color="bg-blue-500/10 text-blue-700"
+                placeholder="Add industry..."
+              />
+            ) : (
+              <TagList items={d.industries as string[] ?? []} color="bg-blue-500/10 text-blue-700" />
+            )}
           </Section>
 
           <Section title="Company Size" confidence={conf.size}>
+            {editing ? (
+              <RangeEditor
+                min={((editData?.employeeRange ?? empRange) as EmployeeRange).min}
+                max={((editData?.employeeRange ?? empRange) as EmployeeRange).max}
+                sweetSpot={((editData?.employeeRange ?? empRange) as EmployeeRange).sweetSpot}
+                onChange={(v) => updateField("employeeRange", v)}
+              />
+            ) : (
             <div className="text-xs text-foreground">
               <span className="font-semibold">{empRange.min.toLocaleString()}</span>
               <span className="text-muted-foreground"> – </span>
@@ -182,14 +266,33 @@ export default function IcpPage() {
                 <span className="text-muted-foreground"> · Sweet spot: {empRange.sweetSpot.toLocaleString()}</span>
               )}
             </div>
+            )}
           </Section>
 
           <Section title="Geographies" confidence={conf.geo}>
-            <TagList items={d.geographies as string[] ?? []} color="bg-violet-500/10 text-violet-700" />
+            {editing ? (
+              <TagEditor
+                tags={(editData?.geographies ?? d.geographies ?? []) as string[]}
+                onChange={(v) => updateField("geographies", v)}
+                color="bg-violet-500/10 text-violet-700"
+                placeholder="Add country/region..."
+              />
+            ) : (
+              <TagList items={d.geographies as string[] ?? []} color="bg-violet-500/10 text-violet-700" />
+            )}
           </Section>
 
           <Section title="Keywords">
-            <TagList items={d.keywords as string[] ?? []} color="bg-slate-500/10 text-slate-600" />
+            {editing ? (
+              <TagEditor
+                tags={(editData?.keywords ?? d.keywords ?? []) as string[]}
+                onChange={(v) => updateField("keywords", v)}
+                color="bg-slate-500/10 text-slate-600"
+                placeholder="Add keyword..."
+              />
+            ) : (
+              <TagList items={d.keywords as string[] ?? []} color="bg-slate-500/10 text-slate-600" />
+            )}
           </Section>
         </div>
 
@@ -221,13 +324,60 @@ export default function IcpPage() {
 
         <div className="grid md:grid-cols-2 gap-4">
           <Section title="Competitors">
-            <TagList items={d.competitors as string[] ?? []} color="bg-rose-500/10 text-rose-700" />
+            {editing ? (
+              <TagEditor
+                tags={(editData?.competitors ?? d.competitors ?? []) as string[]}
+                onChange={(v) => updateField("competitors", v)}
+                color="bg-rose-500/10 text-rose-700"
+                placeholder="Add competitor..."
+              />
+            ) : (
+              <TagList items={d.competitors as string[] ?? []} color="bg-rose-500/10 text-rose-700" />
+            )}
           </Section>
 
           <Section title="Disqualifiers">
-            <TagList items={d.disqualifiers as string[] ?? []} color="bg-red-500/10 text-red-600" />
+            {editing ? (
+              <TagEditor
+                tags={(editData?.disqualifiers ?? d.disqualifiers ?? []) as string[]}
+                onChange={(v) => updateField("disqualifiers", v)}
+                color="bg-red-500/10 text-red-600"
+                placeholder="Add disqualifier..."
+              />
+            ) : (
+              <TagList items={d.disqualifiers as string[] ?? []} color="bg-red-500/10 text-red-600" />
+            )}
           </Section>
         </div>
+
+        {/* ICP Evolution Proposals */}
+        {proposals.length > 0 && (
+          <div className="border rounded-lg p-4 bg-amber-50/50 dark:bg-amber-950/10 border-amber-500/20">
+            <h3 className="text-sm font-semibold text-foreground mb-2">ICP Evolution Suggestions</h3>
+            {proposals.map((p) => (
+              <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+                <div>
+                  <p className="text-xs text-foreground">Based on {p.sampleSize} data points</p>
+                  <p className="text-[10px] text-muted-foreground">{new Date(p.createdAt).toLocaleDateString()}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm" variant="outline" className="text-xs h-7"
+                    onClick={() => respondMutation.mutate({ proposalId: p.id, action: "reject" })}
+                  >
+                    Dismiss
+                  </Button>
+                  <Button
+                    size="sm" className="text-xs h-7"
+                    onClick={() => respondMutation.mutate({ proposalId: p.id, action: "accept" })}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Apollo Preview */}
         {apolloQuery.data && (

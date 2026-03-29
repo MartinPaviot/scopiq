@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { WebsiteSource } from "@/components/setup/website-source";
 import { CsvSource } from "@/components/setup/csv-source";
 import { LinkedInSource } from "@/components/setup/linkedin-source";
+import { ConnectionsSource } from "@/components/setup/connections-source";
+import { DocumentSource } from "@/components/setup/document-source";
 import { SourceCard } from "@/components/setup/source-card";
 import { trpc } from "@/lib/trpc-client";
 import { toast } from "sonner";
@@ -191,26 +193,10 @@ export default function SetupPage() {
             urlPattern="linkedin.com/in/"
           />
 
-          {/* P1 Sources (Coming Soon) */}
-          <SourceCard
-            title="LinkedIn Connections"
-            description="Upload your connections CSV for network proximity signals"
-            icon={<LinkedinLogo className="size-5" weight="fill" />}
-            status="empty"
-            comingSoon
-          >
-            <div />
-          </SourceCard>
+          {/* Additional Sources */}
+          <ConnectionsSource />
 
-          <SourceCard
-            title="Strategic Documents"
-            description="Upload pitch decks, strategy docs, or market research (PDF, DOCX)"
-            icon={<FileText className="size-5" />}
-            status="empty"
-            comingSoon
-          >
-            <div />
-          </SourceCard>
+          <DocumentSource />
 
           <SourceCard
             title="CRM Import"

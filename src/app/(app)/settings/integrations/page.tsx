@@ -8,11 +8,12 @@ import { trpc } from "@/lib/trpc-client";
 import { toast } from "sonner";
 
 const INTEGRATIONS = [
-  { type: "apollo", label: "Apollo", description: "Organization & people search for TAM building" },
-  { type: "hubspot", label: "HubSpot", description: "Sync TAM accounts and contacts to your CRM" },
+  { type: "apollo", label: "Apollo", description: "Organization & people search for TAM building", oauth: false },
+  { type: "hubspot", label: "HubSpot", description: "Sync TAM accounts and contacts to your CRM", oauth: true, authUrl: "/api/integrations/hubspot" },
+  { type: "google_sheets", label: "Google Sheets", description: "Export TAM data to Google Sheets", oauth: true, authUrl: "/api/integrations/google" },
 ];
 
-function IntegrationCard({ type, label, description }: { type: string; label: string; description: string }) {
+function IntegrationCard({ type, label, description, oauth, authUrl }: { type: string; label: string; description: string; oauth?: boolean; authUrl?: string }) {
   const [apiKey, setApiKey] = useState("");
   const integrationsQuery = trpc.integration.list.useQuery();
   const connectMutation = trpc.integration.connect.useMutation({
@@ -53,7 +54,12 @@ function IntegrationCard({ type, label, description }: { type: string; label: st
         )}
       </div>
       <p className="text-xs text-muted-foreground mb-3">{description}</p>
-      {!isConnected && (
+      {!isConnected && oauth && authUrl && (
+        <Button size="sm" onClick={() => window.location.href = authUrl}>
+          Connect {label}
+        </Button>
+      )}
+      {!isConnected && !oauth && (
         <div className="flex gap-2">
           <Input
             type="password"

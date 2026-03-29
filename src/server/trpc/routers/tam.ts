@@ -977,6 +977,84 @@ export const tamRouter = router({
 
       return { companiesCreated, contactsCreated, skipped };
     }),
+
+  /**
+   * Export TAM to Google Sheets.
+   * Creates a new spreadsheet with accounts + contacts data.
+   */
+  exportToSheets: protectedProcedure
+    .input(z.object({ tamBuildId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { decrypt: decryptKey } = await import("@/lib/encryption");
+
+      const integration = await prisma.integration.findFirst({
+        where: { workspaceId: ctx.workspaceId, type: "google_sheets", status: "ACTIVE" },
+      });
+
+      if (!integration?.accessToken) {
+        throw new Error("Connect Google Sheets in Settings first");
+      }
+
+      const token = decryptKey(integration.accessToken);
+
+      // Load accounts
+      const accounts = await prisma.tamAccount.findMany({
+        where: { tamBuildId: input.tamBuildId },
+        orderBy: { heatScore: "desc" },
+        take: 2000,
+        select: {
+          name: true, domain: true, industry: true, employeeCount: true,
+          tier: true, heat: true, heatScore: true, country: true, city: true,
+          websiteUrl: true, linkedinUrl: true, hiringSignal: true, fundedSignal: true,
+        },
+      });
+
+      // Create spreadsheet
+      const createRes = await fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          properties: { title: `Scopiq TAM - ${new Date().toISOString().slice(0, 10)}` },
+          sheets: [{ properties: { title: "Accounts" } }],
+        }),
+      });
+
+      if (!createRes.ok) {
+        const err = await createRes.text();
+        throw new Error(`Failed to create sheet: ${err.slice(0, 200)}`);
+      }
+
+      const sheet = await createRes.json();
+      const spreadsheetId = sheet.spreadsheetId;
+
+      // Write data
+      const headers = ["Name", "Domain", "Industry", "Employees", "Tier", "Heat", "Score", "Country", "City", "Website", "LinkedIn", "Hiring", "Funded"];
+      const rows = accounts.map((a) => [
+        a.name, a.domain ?? "", a.industry ?? "", String(a.employeeCount ?? ""),
+        a.tier ?? "", a.heat ?? "", String(a.heatScore),
+        a.country ?? "", a.city ?? "", a.websiteUrl ?? "", a.linkedinUrl ?? "",
+        a.hiringSignal ? "Yes" : "", a.fundedSignal ? "Yes" : "",
+      ]);
+
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Accounts!A1:append?valueInputOption=RAW`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          values: [headers, ...rows],
+        }),
+      });
+
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+      logger.info("[tam/exportToSheets] Exported", { spreadsheetId, rows: rows.length });
+
+      return { spreadsheetId, url: sheetUrl, rows: rows.length };
+    }),
 });
 
 // ─── Filter Counts Builder (Account-Based) ──────────────

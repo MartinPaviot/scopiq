@@ -194,7 +194,7 @@ export const ingestionRouter = router({
   processUpload: protectedProcedure
     .input(
       z.object({
-        type: z.enum(["csv_customers", "document"]),
+        type: z.enum(["csv_customers", "document", "linkedin_connections"]),
         fileName: z.string(),
         content: z.string(),
       }),
@@ -283,7 +283,95 @@ export const ingestionRouter = router({
           return { sourceId: source.id, status: "complete" as const, patterns };
         }
 
-        // Document type — just store raw text (PDF/DOCX parsing is P1)
+        if (input.type === "linkedin_connections") {
+          // Parse LinkedIn connections CSV export
+          // LinkedIn format: First Name, Last Name, Email Address, Company, Position, Connected On
+          const lines = input.content.split(/\r?\n/).filter((l) => l.trim());
+          if (lines.length < 2) {
+            await prisma.ingestionSource.update({
+              where: { id: source.id },
+              data: { status: "error", errorMessage: "No connections found in CSV" },
+            });
+            return { sourceId: source.id, status: "error" as const, error: "Empty CSV" };
+          }
+
+          const delimiter = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ",";
+          const headers = lines[0].split(delimiter).map((h) => h.trim().replace(/^["']|["']$/g, "").toLowerCase());
+
+          const connections: Array<{ name: string; company: string | null; position: string | null; email: string | null; connectedOn: string | null }> = [];
+
+          for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(delimiter).map((v) => v.trim().replace(/^["']|["']$/g, ""));
+            const row: Record<string, string> = {};
+            headers.forEach((h, j) => { if (values[j]) row[h] = values[j]; });
+
+            const firstName = row["first name"] ?? row["firstname"] ?? row["prénom"] ?? "";
+            const lastName = row["last name"] ?? row["lastname"] ?? row["nom"] ?? "";
+            if (!firstName && !lastName) continue;
+
+            connections.push({
+              name: `${firstName} ${lastName}`.trim(),
+              company: row["company"] ?? row["entreprise"] ?? row["société"] ?? null,
+              position: row["position"] ?? row["title"] ?? row["poste"] ?? null,
+              email: row["email address"] ?? row["email"] ?? null,
+              connectedOn: row["connected on"] ?? row["date de connexion"] ?? null,
+            });
+          }
+
+          // Store in LinkedInConnection model
+          let stored = 0;
+          for (const conn of connections) {
+            const profileUrl = `linkedin-connection-${conn.name.toLowerCase().replace(/\s+/g, "-")}`;
+            try {
+              await prisma.linkedInConnection.upsert({
+                where: { workspaceId_profileUrl: { workspaceId: ctx.workspaceId, profileUrl } },
+                create: {
+                  workspaceId: ctx.workspaceId,
+                  profileUrl,
+                  name: conn.name,
+                  headline: conn.position,
+                  companyName: conn.company,
+                  connectionDate: conn.connectedOn ? new Date(conn.connectedOn) : null,
+                },
+                update: {
+                  name: conn.name,
+                  headline: conn.position,
+                  companyName: conn.company,
+                  syncedAt: new Date(),
+                },
+              });
+              stored++;
+            } catch {
+              // Skip duplicates or invalid dates
+            }
+          }
+
+          // Top companies by frequency
+          const companyCount = new Map<string, number>();
+          for (const c of connections) {
+            if (c.company) companyCount.set(c.company, (companyCount.get(c.company) ?? 0) + 1);
+          }
+          const topCompanies = [...companyCount.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([name]) => name);
+
+          const patterns = { totalCustomers: stored, topCompanies };
+
+          await prisma.ingestionSource.update({
+            where: { id: source.id },
+            data: {
+              status: "complete",
+              structuredData: patterns as unknown as Prisma.InputJsonValue,
+              completedAt: new Date(),
+            },
+          });
+
+          logger.info("[ingestion] LinkedIn connections imported", { stored, total: connections.length });
+          return { sourceId: source.id, status: "complete" as const, patterns };
+        }
+
+        // Document type — store raw text for ICP inference context
         await prisma.ingestionSource.update({
           where: { id: source.id },
           data: { status: "complete", completedAt: new Date() },

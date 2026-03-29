@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChartBar, Target, Gear, SignOut } from "@phosphor-icons/react";
+import { ChartBar, Target, Gear, SignOut, ClockCounterClockwise } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/lib/auth-client";
 
 const NAV_ITEMS = [
   { href: "/market", label: "Market", icon: ChartBar },
   { href: "/icp", label: "ICP", icon: Target },
+  { href: "/changelog", label: "Changelog", icon: ClockCounterClockwise },
   { href: "/settings", label: "Settings", icon: Gear },
 ];
 
