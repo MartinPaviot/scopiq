@@ -389,15 +389,15 @@ export default function SetupPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  // Redirect to market as soon as accounts start loading
+  // Redirect to ICP page once ICP is ready (user reviews ICP, TAM builds in background)
   const redirectedRef = useRef(false);
-  const shouldRedirect = !redirectedRef.current && tamProgress?.phase &&
-    ["loading-top", "loading-more", "scoring", "contacts", "signals", "complete"].includes(tamProgress.phase);
+  const shouldRedirect = !redirectedRef.current && icpPhase === "done-icp";
 
   useEffect(() => {
     if (shouldRedirect) {
       redirectedRef.current = true;
-      router.push("/market");
+      // Small delay so user sees "ICP ready" phase
+      setTimeout(() => router.push("/icp"), 1500);
     }
   }, [shouldRedirect, router]);
 

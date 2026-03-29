@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Target, ArrowRight, ArrowsClockwise, PencilSimple, FloppyDisk, X } from "@phosphor-icons/react";
+import { useState, useRef, useEffect } from "react";
+import { Target, ArrowRight, ArrowsClockwise, PencilSimple, FloppyDisk, X, Spinner, Buildings } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfidenceBar } from "@/components/icp/confidence-bar";
@@ -105,16 +105,29 @@ export default function IcpPage() {
     },
   });
 
+  const tamBuildQuery = trpc.tam.getLatestBuild.useQuery();
   const tamMutation = trpc.tam.startBuild.useMutation({
     onSuccess: () => {
       toast.success("TAM build started!");
-      router.push("/market");
+      tamBuildQuery.refetch();
     },
     onError: (err) => toast.error(err.message),
   });
 
   const icp = icpQuery.data;
   const companyUrl = (workspaceQuery.data as Record<string, string> | undefined)?.companyUrl ?? "";
+  const tamBuild = tamBuildQuery.data as Record<string, unknown> | null;
+  const tamIsBuilding = tamBuild && tamBuild.status !== "complete" && tamBuild.status !== "failed";
+  const tamIsComplete = tamBuild?.status === "complete";
+
+  // Auto-start TAM build when ICP exists but no build yet
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (icp?.data && !tamBuild && !tamBuildQuery.isLoading && !autoStartedRef.current && companyUrl) {
+      autoStartedRef.current = true;
+      tamMutation.mutate({ siteUrl: companyUrl });
+    }
+  }, [icp?.data, tamBuild, tamBuildQuery.isLoading, companyUrl, tamMutation]);
   const proposals = (proposalsQuery.data ?? []) as Array<{ id: string; changes: unknown; sampleSize: number; createdAt: string }>;
 
   const startEditing = () => {
@@ -212,6 +225,37 @@ export default function IcpPage() {
           </div>
         </div>
       </div>
+
+      {/* TAM Build Status Banner */}
+      {tamIsBuilding && (
+        <div className="max-w-4xl mx-auto px-6 pt-4">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <Spinner className="size-4 text-primary animate-spin shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">TAM building in background</p>
+              <p className="text-xs text-muted-foreground">
+                {String((tamBuild as Record<string, unknown>)?.loadedCount ?? 0)} accounts loaded — you can review your ICP while it builds
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => router.push("/market")}>
+              View Market
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {tamIsComplete && (
+        <div className="max-w-4xl mx-auto px-6 pt-4">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 cursor-pointer hover:bg-emerald-500/10 transition-colors" onClick={() => router.push("/market")}>
+            <Buildings className="size-4 text-emerald-600 shrink-0" weight="fill" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">TAM ready — {String((tamBuild as Record<string, unknown>)?.loadedCount ?? 0)} accounts scored</p>
+              <p className="text-xs text-muted-foreground">Click to view your market</p>
+            </div>
+            <ArrowRight className="size-4 text-emerald-600" />
+          </div>
+        </div>
+      )}
 
       {/* ICP Grid */}
       <div className="max-w-4xl mx-auto px-6 py-6 space-y-4">

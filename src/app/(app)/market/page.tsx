@@ -277,6 +277,10 @@ export default function MarketPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"accounts" | "contacts">("accounts");
 
+  // Load ICP for banner
+  const icpQuery = trpc.icp.getActive.useQuery();
+  const icpData = icpQuery.data?.data as Record<string, unknown> | null;
+
   // Load latest build
   const buildQuery = trpc.tam.getLatestBuild.useQuery();
   const build = buildQuery.data;
@@ -396,6 +400,31 @@ export default function MarketPage() {
         </div>
       )}
 
+      {/* ICP Banner */}
+      {icpData && (
+        <div className="border-b px-4 py-1.5 bg-muted/30 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Target className="size-3.5 text-primary shrink-0" weight="duotone" />
+            <span className="text-[10px] font-medium text-muted-foreground">ICP:</span>
+            {(icpData.roles as Array<{ title: string }> | undefined)?.slice(0, 3).map((r) => (
+              <span key={r.title} className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-700 font-medium">{r.title}</span>
+            ))}
+            {(icpData.industries as string[] | undefined)?.slice(0, 3).map((ind) => (
+              <span key={ind} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-700 font-medium">{ind}</span>
+            ))}
+            {(icpData.employeeRange as { min: number; max: number } | undefined) && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 font-medium">
+                {(icpData.employeeRange as { min: number; max: number }).min}-{(icpData.employeeRange as { min: number; max: number }).max} emp
+              </span>
+            )}
+            {(icpData.geographies as string[] | undefined)?.slice(0, 2).map((g) => (
+              <span key={g} className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-700 font-medium">{g}</span>
+            ))}
+            <button onClick={() => router.push("/icp")} className="text-[10px] text-primary hover:underline ml-1">Edit</button>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="border-b px-4 py-2 flex items-center gap-3 shrink-0 bg-card">
         <div className="relative flex-1 max-w-md">
@@ -460,7 +489,7 @@ export default function MarketPage() {
         <div className="grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b bg-muted/30 shrink-0">
           <button className="text-left flex items-center gap-1" onClick={() => toggleSort("name")}>Company <SortIcon field="name" /></button>
           <button className="text-left flex items-center gap-1" onClick={() => toggleSort("industry")}>Industry <SortIcon field="industry" /></button>
-          <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("employeeCount")}>Size <SortIcon field="employeeCount" /></button>
+          <button className="text-left flex items-center gap-1" onClick={() => toggleSort("employeeCount")}>Size <SortIcon field="employeeCount" /></button>
           <span>Location</span>
           <button className="text-center flex items-center gap-1 justify-center" onClick={() => toggleSort("tier")}>Tier <SortIcon field="tier" /></button>
           <span className="text-center">Heat</span>
@@ -559,7 +588,7 @@ export default function MarketPage() {
                 <span className="text-[11px] text-muted-foreground truncate">{account.industry ?? "—"}</span>
 
                 {/* Size */}
-                <span className="text-[11px] text-muted-foreground text-right tabular-nums">
+                <span className="text-[11px] text-muted-foreground tabular-nums">
                   {formatEmployees(account.employeeCount)}
                 </span>
 
