@@ -243,9 +243,175 @@
   border-color: oklch(1 0 0 / 8%);
 }
 
+/* ============================================
+   Scopiq Signature Design System
+   (Ported from LeadSens brand)
+   ============================================ */
+
+/* ─── Mesh Background (signature gradient) ─── */
+.bg-scopiq-mesh {
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(23, 195, 178, 0.25) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 75% 15%, rgba(44, 107, 237, 0.22) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 55% at 60% 70%, rgba(255, 122, 61, 0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 25% 80%, rgba(217, 119, 6, 0.15) 0%, transparent 55%),
+    radial-gradient(ellipse 90% 70% at 50% 50%, rgba(255, 247, 237, 0.30) 0%, transparent 80%);
+  background-attachment: fixed;
+}
+
+.dark .bg-scopiq-mesh {
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(23, 195, 178, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 75% 15%, rgba(44, 107, 237, 0.16) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 55% at 60% 70%, rgba(255, 122, 61, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 25% 80%, rgba(217, 119, 6, 0.10) 0%, transparent 55%);
+  background-attachment: fixed;
+}
+
+/* ─── Gradient Text (animated shimmer) ────── */
+.gradient-text {
+  background: linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D, #17C3B2);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shimmer 8s ease-in-out infinite;
+}
+
+.dark .gradient-text {
+  background: linear-gradient(90deg, #2DD4BF, #60A5FA, #FB923C, #2DD4BF);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shimmer 8s ease-in-out infinite;
+}
+
+@keyframes gradient-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ─── Hero Stagger Animation ─────────────── */
+@keyframes hero-fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-stagger {
+  opacity: 0;
+  animation: hero-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── CTA Button Shine Sweep ─────────────── */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+  transition: left 0.5s ease;
+}
+
+.btn-shine:hover::after {
+  left: 120%;
+}
+
+/* ─── Gradient CTA Button ────────────────── */
+.btn-gradient {
+  background: linear-gradient(135deg, #17C3B2, #2C6BED, #FF7A3D);
+  background-size: 200% 200%;
+  transition: all 300ms ease;
+}
+
+.btn-gradient:hover {
+  background-position: 100% 100%;
+  box-shadow: 0 8px 32px rgba(23, 195, 178, 0.25);
+}
+
+/* ─── Glow Behind Cards ──────────────────── */
+.glow-teal {
+  box-shadow: 0 0 60px -12px rgba(23, 195, 178, 0.25);
+}
+
+.glow-gradient {
+  background: linear-gradient(135deg, rgba(23,195,178,0.15), rgba(44,107,237,0.12), rgba(255,122,61,0.15));
+}
+
+/* ─── Input Focus Glow ───────────────────── */
+.input-glow:focus-within {
+  box-shadow: 0 0 0 3px rgba(23, 195, 178, 0.15);
+  border-color: oklch(0.72 0.14 180);
+}
+
+/* ─── Subtle Grid Background ─────────────── */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+.dark .bg-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+/* ─── Section alternating bg ─────────────── */
+.section-alt {
+  background-color: oklch(0.967 0.001 286 / 30%);
+}
+.dark .section-alt {
+  background-color: oklch(0.2 0.006 286 / 30%);
+}
+
+/* ─── Check animation (input completion) ─── */
+@keyframes check-pop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-check-pop {
+  animation: check-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ─── Pulse ring (progress indicator) ────── */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(23, 195, 178, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(23, 195, 178, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(23, 195, 178, 0); }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ─── Drop zone active state ─────────────── */
+.drop-zone-active {
+  border-color: oklch(0.72 0.14 180);
+  background-color: oklch(0.72 0.14 180 / 5%);
+}
+
 /* ─── Reduced Motion ─────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .animate-fade-in-up { animation: none; }
   .card-hover { transition: none; }
+  .hero-stagger { animation: none; opacity: 1; }
+  .gradient-text { animation: none; }
+  .dark .gradient-text { animation: none; }
+  .btn-shine::after { display: none; }
+  .animate-check-pop { animation: none; opacity: 1; }
+  .animate-pulse-ring { animation: none; }
 }

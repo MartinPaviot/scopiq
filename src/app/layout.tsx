@@ -23,6 +23,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Scopiq",
   description: "From fuzzy ICP to enriched, scored TAM — for early-stage founders",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({
