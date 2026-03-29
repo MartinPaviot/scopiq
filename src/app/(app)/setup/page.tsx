@@ -12,7 +12,7 @@ import { CsvSource } from "@/components/setup/csv-source";
 import { LinkedInSource } from "@/components/setup/linkedin-source";
 import { ConnectionsSource } from "@/components/setup/connections-source";
 import { DocumentSource } from "@/components/setup/document-source";
-import { SourceCard } from "@/components/setup/source-card";
+import { CrmSource } from "@/components/setup/crm-source";
 import { trpc } from "@/lib/trpc-client";
 import { toast } from "sonner";
 import { useBuildStream, type BuildProgress } from "@/lib/use-build-stream";
@@ -198,15 +198,7 @@ export default function SetupPage() {
 
           <DocumentSource />
 
-          <SourceCard
-            title="CRM Import"
-            description="Connect HubSpot or upload a CRM export for deal history"
-            icon={<Database className="size-5" />}
-            status="empty"
-            comingSoon
-          >
-            <div />
-          </SourceCard>
+          <CrmSource />
         </div>
 
         {/* Generate ICP CTA or Progress Panel */}
