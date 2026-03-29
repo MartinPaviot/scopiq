@@ -2,10 +2,10 @@ import { z } from "zod/v4";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { router, protectedProcedure } from "../trpc";
-import { inferIcpProfile } from "@/server/lib/icp/icp-inferrer";
 import { icpProfileDataSchema } from "@/server/lib/icp/icp-schema";
 import { icpProfileToOrgFilters, icpProfileToPeopleFilters } from "@/server/lib/icp/icp-converters";
 import { analyzeCustomerPatterns } from "@/server/lib/icp/icp-customer-analyzer";
+import { mistralClient } from "@/server/lib/llm/mistral-client";
 import { logger } from "@/lib/logger";
 
 export const icpRouter = router({
@@ -61,29 +61,92 @@ export const icpRouter = router({
       customerCount: customerEntries.length,
     });
 
-    // Run inference
-    const siteUrl = (await prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { companyUrl: true },
-    }))?.companyUrl ?? "";
+    // Run inference — direct Mistral call (bypass complex inferrer for reliability)
+    const siteUrl = workspace?.companyUrl ?? "";
 
-    // Inject website markdown into companyDna so the LLM gets raw site content
-    const enrichedDna: Record<string, unknown> = { ...(companyDna ?? {}) };
-    if (websiteMarkdown) {
-      enrichedDna.rawWebsiteContent = websiteMarkdown;
+    const contextParts: string[] = [];
+    if (websiteMarkdown) contextParts.push(`WEBSITE CONTENT:\n${websiteMarkdown.slice(0, 4000)}`);
+    if (companyDna?.oneLiner) contextParts.push(`PRODUCT: ${companyDna.oneLiner}`);
+    if (customerPatterns && customerPatterns.totalCustomers > 0) {
+      contextParts.push(`EXISTING CUSTOMERS (${customerPatterns.totalCustomers} companies):\n` +
+        `Industries: ${customerPatterns.industryDist.slice(0, 5).map((d: { value: string; percentage: number }) => `${d.value} (${d.percentage}%)`).join(", ")}\n` +
+        `Sizes: ${customerPatterns.sizeDist.slice(0, 5).map((d: { value: string; percentage: number }) => `${d.value} (${d.percentage}%)`).join(", ")}`);
     }
 
-    const icpData = await inferIcpProfile({
-      companyDna: enrichedDna,
-      customerPatterns,
-      nlDescription: null,
-      acv: null,
-      salesCycleLength: null,
-      winReasons: null,
-      lossReasons: null,
-      negativeIcpText: null,
+    const SYSTEM = `You are a senior GTM consultant. Analyze this company and infer their IDEAL CUSTOMER PROFILE for B2B outbound prospecting.
+
+Return a FLAT JSON object (no wrapper) with EXACTLY these fields:
+{
+  "roles": [{"title": "exact LinkedIn title", "variations": ["alt titles"], "seniority": "vp|director|c_suite|manager", "why": "reason"}],
+  "industries": ["specific industries"],
+  "employee_range": {"min": 10, "max": 500, "sweet_spot": 100},
+  "geographies": ["United States"],
+  "keywords": ["relevant keywords"],
+  "buying_signals": [{"name": "signal", "detection_method": "how to detect", "why": "why it matters", "strength": "strong|moderate|weak"}],
+  "disqualifiers": ["who NOT to target"],
+  "competitors": ["competitor names"],
+  "segments": [{"name": "segment", "titles": [], "industries": [], "sizes": [], "geos": []}]
+}`;
+
+    logger.info("[icp.infer] Calling Mistral directly", { contextLength: contextParts.join("\n").length });
+
+    const rawResult = await mistralClient.jsonRaw({
+      model: "mistral-large-latest",
+      system: SYSTEM,
+      prompt: `Website: ${siteUrl}\n\n${contextParts.join("\n\n")}`,
       workspaceId,
-      siteUrl,
+      action: "icp-direct-inference",
+      temperature: 0.3,
+    });
+
+    logger.info("[icp.infer] Mistral response", {
+      type: typeof rawResult,
+      preview: JSON.stringify(rawResult).slice(0, 300),
+    });
+
+    // Parse — handle both flat and wrapped formats
+    let parsed = rawResult as Record<string, unknown>;
+    const keys = Object.keys(parsed);
+    if (keys.length === 1 && typeof parsed[keys[0]] === "object") {
+      parsed = parsed[keys[0]] as Record<string, unknown>;
+    }
+
+    const roles = (Array.isArray(parsed.roles) ? parsed.roles : []) as Array<{ title: string; variations?: string[]; seniority?: string; why?: string }>;
+    const empRange = (parsed.employee_range ?? parsed.employeeRange ?? { min: 10, max: 10000, sweet_spot: 200 }) as { min: number; max: number; sweet_spot?: number; sweetSpot?: number };
+
+    const icpData = {
+      roles: roles.map((r) => ({ title: r.title ?? "", variations: r.variations ?? [], seniority: r.seniority ?? "", why: r.why ?? "" })),
+      industries: Array.isArray(parsed.industries) ? parsed.industries as string[] : [],
+      employeeRange: { min: empRange.min ?? 10, max: empRange.max ?? 10000, sweetSpot: empRange.sweet_spot ?? empRange.sweetSpot ?? 200 },
+      geographies: Array.isArray(parsed.geographies) ? parsed.geographies as string[] : [],
+      keywords: Array.isArray(parsed.keywords) ? parsed.keywords as string[] : [],
+      buyingSignals: Array.isArray(parsed.buying_signals ?? parsed.buyingSignals)
+        ? ((parsed.buying_signals ?? parsed.buyingSignals) as Array<Record<string, string>>).map((s) => ({
+            name: s.name ?? "", detectionMethod: s.detection_method ?? s.detectionMethod ?? "", why: s.why ?? "", strength: (s.strength ?? "moderate") as "strong" | "moderate" | "weak",
+          }))
+        : [],
+      disqualifiers: Array.isArray(parsed.disqualifiers) ? parsed.disqualifiers as string[] : [],
+      competitors: Array.isArray(parsed.competitors) ? parsed.competitors as string[] : [],
+      segments: Array.isArray(parsed.segments)
+        ? (parsed.segments as Array<Record<string, unknown>>).map((s) => ({
+            name: String(s.name ?? ""), titles: (s.titles ?? []) as string[], industries: (s.industries ?? []) as string[], sizes: (s.sizes ?? []) as string[], geos: (s.geos ?? []) as string[],
+          }))
+        : [],
+      negativeIcp: null,
+      confidence: { industry: 0.5, size: 0.5, title: 0.5, geo: 0.5, overall: 0.5 },
+    };
+
+    // Boost confidence based on data quality
+    if (roles.length > 0) icpData.confidence.title = 0.8;
+    if (icpData.industries.length > 0) icpData.confidence.industry = 0.8;
+    if (icpData.geographies.length > 0) icpData.confidence.geo = 0.8;
+    if (customerPatterns) { icpData.confidence.industry = 0.9; icpData.confidence.size = 0.9; }
+    icpData.confidence.overall = (icpData.confidence.industry + icpData.confidence.size + icpData.confidence.title + icpData.confidence.geo) / 4;
+
+    logger.info("[icp.infer] Parsed ICP", {
+      roles: icpData.roles.length,
+      industries: icpData.industries.length,
+      geos: icpData.geographies.length,
     });
 
     // Deactivate previous profiles

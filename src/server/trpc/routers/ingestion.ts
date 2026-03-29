@@ -418,6 +418,47 @@ export const ingestionRouter = router({
       }
     }),
 
+  /** Save or update a text-based source (ideal customer description, dream companies, competitors). */
+  saveTextSource: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(["ideal_customer", "dream_companies", "competitors"]),
+        content: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!input.content.trim()) {
+        // If empty, delete existing source
+        await prisma.ingestionSource.deleteMany({
+          where: { workspaceId: ctx.workspaceId, type: input.type },
+        });
+        return { status: "deleted" as const };
+      }
+
+      const existing = await prisma.ingestionSource.findFirst({
+        where: { workspaceId: ctx.workspaceId, type: input.type },
+      });
+
+      if (existing) {
+        await prisma.ingestionSource.update({
+          where: { id: existing.id },
+          data: { rawContent: input.content, status: "complete", completedAt: new Date() },
+        });
+        return { sourceId: existing.id, status: "complete" as const };
+      }
+
+      const source = await prisma.ingestionSource.create({
+        data: {
+          workspaceId: ctx.workspaceId,
+          type: input.type,
+          rawContent: input.content,
+          status: "complete",
+          completedAt: new Date(),
+        },
+      });
+      return { sourceId: source.id, status: "complete" as const };
+    }),
+
   /** Delete a source. */
   deleteSource: protectedProcedure
     .input(z.object({ sourceId: z.string() }))

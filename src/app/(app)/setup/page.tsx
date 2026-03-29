@@ -68,6 +68,7 @@ function InputCard({
   label,
   hint,
   complete,
+  onRemove,
   children,
   delay = 0,
 }: {
@@ -75,6 +76,7 @@ function InputCard({
   label: string;
   hint?: string;
   complete?: boolean;
+  onRemove?: () => void;
   children: React.ReactNode;
   delay?: number;
 }) {
@@ -103,13 +105,21 @@ function InputCard({
             icon
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h3 className="text-[13px] font-semibold text-foreground leading-tight">{label}</h3>
           {hint && !complete && (
             <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{hint}</p>
           )}
         </div>
-        {complete && (
+        {complete && onRemove && (
+          <button
+            onClick={onRemove}
+            className="ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-full text-red-500 hover:bg-red-500/10 transition-colors shrink-0"
+          >
+            Remove
+          </button>
+        )}
+        {complete && !onRemove && (
           <span className="ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 shrink-0">
             Done
           </span>
@@ -122,51 +132,29 @@ function InputCard({
 
 // ─── Progress Panel (ICP + TAM build) ──────────
 
+// Only phases actually emitted by backend (ICP flow + TAM SSE stream)
 const BUILD_PHASES = [
   { id: "analyzing", label: "Analyzing your data sources" },
-  { id: "scraping", label: "Scraping website content" },
-  { id: "extracting", label: "Extracting company DNA" },
   { id: "inferring", label: "Generating your ICP" },
-  { id: "validating", label: "Computing confidence scores" },
-  { id: "done-icp", label: "ICP ready — starting TAM build" },
-  { id: "counting", label: "Counting matching organizations" },
+  { id: "done-icp", label: "ICP ready" },
+  { id: "counting", label: "Counting your market" },
   { id: "loading-top", label: "Loading top accounts" },
-  { id: "loading-more", label: "Loading more accounts..." },
-  { id: "scoring", label: "Scoring and ranking accounts" },
-  { id: "contacts", label: "Discovering contacts for Tier A" },
-  { id: "signals", label: "Detecting buying signals" },
+  { id: "expanding", label: "Loading more accounts" },
+  { id: "scoring", label: "Scoring accounts" },
   { id: "complete", label: "TAM build complete" },
 ];
 
-// Simulated sub-logs for each phase (show granular activity)
 const PHASE_LOGS: Record<string, string[]> = {
   analyzing: [
     "Checking ingestion sources...",
     "Found website content in cache",
     "Loading customer import data...",
   ],
-  scraping: [
-    "Fetching homepage content...",
-    "Extracting meta tags and structured data...",
-    "Parsing page content...",
-  ],
-  extracting: [
-    "Identifying value proposition...",
-    "Detecting target buyers...",
-    "Analyzing pricing model...",
-    "Extracting social proof and case studies...",
-  ],
   inferring: [
     "Building inference context...",
-    "Running AI analysis...",
+    "Running AI analysis (structured JSON)...",
     "Parsing roles, industries, geographies...",
     "Mapping to search filters...",
-  ],
-  validating: [
-    "Computing confidence: industry 0.82",
-    "Computing confidence: company size 0.75",
-    "Computing confidence: titles 0.88",
-    "Overall confidence: 0.81",
   ],
   "done-icp": [
     "ICP saved — version 1",
@@ -177,15 +165,17 @@ const PHASE_LOGS: Record<string, string[]> = {
     "Querying organization database...",
   ],
   "loading-top": [
-    "Page 1/20 — 100 organizations loaded",
-    "Page 2/20 — 200 organizations loaded",
-    "Page 3/20 — 300 organizations loaded",
+    "Loading first batch of accounts...",
+    "Enriching company data...",
+  ],
+  expanding: [
+    "Loading additional pages...",
+    "Deduplicating results...",
   ],
   scoring: [
     "Industry fit (0-25 pts)...",
     "Size fit (0-25 pts)...",
     "Keyword overlap (0-20 pts)...",
-    "Signal score (0-20 pts)...",
     "Data freshness (0-10 pts)...",
     "Assigning tiers: A / B / C / D",
   ],
@@ -196,21 +186,13 @@ const PHASE_LOGS: Record<string, string[]> = {
 };
 
 function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgress: BuildProgress | null }) {
-  const currentId = tamProgress?.phase ?? icpPhase;
+  // Ignore "pending" / "rate-limited" from TAM stream — keep showing ICP phase
+  const tamPhase = tamProgress?.phase;
+  const currentId = tamPhase && tamPhase !== "pending" && tamPhase !== "rate-limited" ? tamPhase : icpPhase;
   const currentIdx = BUILD_PHASES.findIndex((p) => p.id === currentId);
-  const [completedPhases, setCompletedPhases] = useState<Set<string>>(new Set());
   const [logs, setLogs] = useState<string[]>([]);
   const [elapsedSec, setElapsedSec] = useState(0);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const prevPhaseRef = useRef<string>("");
-
-  // Track actually visited phases — mark previous phase as completed when phase changes
-  useEffect(() => {
-    if (prevPhaseRef.current && prevPhaseRef.current !== currentId) {
-      setCompletedPhases((prev) => new Set(prev).add(prevPhaseRef.current));
-    }
-    prevPhaseRef.current = currentId;
-  }, [currentId]);
 
   // Timer
   useEffect(() => {
@@ -272,8 +254,8 @@ function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgres
         <div className="space-y-2 mb-4">
           {BUILD_PHASES.map((phase, i) => {
             const isCurrent = phase.id === currentId;
-            const isPast = completedPhases.has(phase.id);
-            if (i > currentIdx + 2 && !isPast) return null; // Only show next 2 upcoming
+            const isPast = currentIdx >= 0 && i < currentIdx;
+            if (i > currentIdx + 2 && !isPast) return null;
 
             return (
               <div key={phase.id} className={cn(
@@ -419,9 +401,74 @@ export default function SetupPage() {
   }
 
   // Check completed sources
-  const sources = (sourcesQuery.data ?? []) as Array<{ type: string; status: string }>;
-  const hasWebsite = websiteStatus === "done" || sources.some((s) => s.type === "website" && s.status === "complete");
-  const hasLinkedin = linkedinStatus === "done" || sources.some((s) => s.type === "linkedin_profile" && s.status === "complete");
+  type Source = { id: string; type: string; status: string; inputUrl?: string | null; fileName?: string | null; rawContent?: string | null };
+  const sources = (sourcesQuery.data ?? []) as Source[];
+  const deleteMutation = trpc.ingestion.deleteSource.useMutation({
+    onSuccess: () => { sourcesQuery.refetch(); toast.success("Source removed"); },
+  });
+  const disconnectMutation = trpc.integration.disconnect.useMutation({
+    onSuccess: () => { setCrmConnected(false); toast.success("CRM disconnected"); },
+  });
+
+  // Check if HubSpot is already connected
+  const integrationsQuery = trpc.integration.list.useQuery();
+  const hubspotConnected = (integrationsQuery.data ?? []).some((i: { type: string; status: string }) => i.type === "hubspot" && i.status === "ACTIVE");
+
+  const websiteSource = sources.find((s) => s.type === "website" && s.status === "complete");
+  const linkedinSource = sources.find((s) => s.type === "linkedin_profile" && s.status === "complete");
+  const docSource = sources.find((s) => s.type === "document" && s.status === "complete");
+  const csvSource = sources.find((s) => s.type === "csv_customers" && s.status === "complete");
+  const crmSource = sources.find((s) => s.type === "crm" && s.status === "complete");
+
+  const idealSource = sources.find((s) => s.type === "ideal_customer" && s.status === "complete");
+  const dreamSource = sources.find((s) => s.type === "dream_companies" && s.status === "complete");
+  const competitorsSource = sources.find((s) => s.type === "competitors" && s.status === "complete");
+
+  // Hydrate inputs from existing sources
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    // Wait until the sources query has finished loading (not just initial undefined)
+    if (sourcesQuery.isLoading || !sourcesQuery.isFetched) return;
+
+    hydratedRef.current = true;
+    const srcs = (sourcesQuery.data ?? []) as Source[];
+
+    const find = (type: string) => srcs.find((s) => s.type === type && s.status === "complete");
+    const ws = find("website");
+    const li = find("linkedin_profile");
+    const doc = find("document");
+    const csv = find("csv_customers");
+    const crm = find("crm");
+    const ideal = find("ideal_customer");
+    const dream = find("dream_companies");
+    const comp = find("competitors");
+
+    if (ws?.inputUrl) setWebsiteUrl(ws.inputUrl);
+    if (ws) setWebsiteStatus("done");
+    if (li?.inputUrl) setLinkedinUrl(li.inputUrl);
+    if (li) setLinkedinStatus("done");
+    if (doc?.fileName) setDocFileName(doc.fileName);
+    if (csv?.fileName) setCsvFileName(csv.fileName);
+    if (csv) setCsvUploaded(true);
+    if (crm || hubspotConnected) setCrmConnected(true);
+    if (ideal?.rawContent) setIdealDescription(ideal.rawContent);
+    if (dream?.rawContent) setDreamCompanies(dream.rawContent);
+    if (comp?.rawContent) setCompetitors(comp.rawContent);
+  }, [sourcesQuery.data, hubspotConnected]);
+
+  // Auto-save text sources with debounce
+  const saveTextSource = trpc.ingestion.saveTextSource.useMutation();
+  const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const autoSaveText = (type: "ideal_customer" | "dream_companies" | "competitors", value: string) => {
+    if (debounceRef.current[type]) clearTimeout(debounceRef.current[type]);
+    debounceRef.current[type] = setTimeout(() => {
+      saveTextSource.mutate({ type, content: value });
+    }, 1000);
+  };
+
+  const hasWebsite = websiteStatus === "done" || !!websiteSource;
+  const hasLinkedin = linkedinStatus === "done" || !!linkedinSource;
   const hasAnyInput = hasWebsite || websiteUrl.trim().length > 5 || hasLinkedin || csvUploaded || crmConnected || idealDescription.length > 20;
   const completedCount = [hasWebsite, hasLinkedin, csvUploaded, crmConnected, idealDescription.length > 20, dreamCompanies.length > 5].filter(Boolean).length;
 
@@ -502,13 +549,6 @@ export default function SetupPage() {
       <div className="relative">
         {/* Hero Header */}
         <div className="max-w-5xl mx-auto px-6 pt-16 pb-8 text-center">
-          <div className="hero-stagger" style={{ animationDelay: "0ms" }}>
-            <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/60 backdrop-blur-sm px-4 py-1.5 text-sm text-muted-foreground mb-6">
-              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-              AI-Powered TAM Engine
-            </div>
-          </div>
-
           <h1
             className="hero-stagger text-4xl sm:text-5xl font-bold tracking-tight mb-4"
             style={{ animationDelay: "100ms" }}
@@ -549,7 +589,7 @@ export default function SetupPage() {
           <div className="max-w-5xl mx-auto px-6 pb-16 space-y-8">
             {/* TIER 1 */}
             <TierSection title="The essentials" subtitle="What every founder has, even in stealth" delay={400}>
-              <InputCard icon={<Globe className="size-5" />} label="Website or landing page" hint="Notion page, Carrd, anything works" complete={hasWebsite} delay={500}>
+              <InputCard icon={<Globe className="size-5" />} label="Website or landing page" hint="Notion page, Carrd, anything works" complete={hasWebsite} delay={500} onRemove={websiteSource ? () => { deleteMutation.mutate({ sourceId: websiteSource.id }); setWebsiteUrl(""); setWebsiteStatus("idle"); } : undefined}>
                 <div className="flex gap-2">
                   <Input placeholder="https://your-company.com" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAnalyzeWebsite()} disabled={websiteStatus === "loading"} className="h-10" />
                   <Button onClick={handleAnalyzeWebsite} disabled={!websiteUrl.trim() || websiteStatus === "loading"} className="btn-shine shrink-0">
@@ -558,7 +598,7 @@ export default function SetupPage() {
                 </div>
               </InputCard>
 
-              <InputCard icon={<LinkedinLogo className="size-5" weight="fill" />} label="Your LinkedIn profile" hint="Helps us understand your network and background" complete={hasLinkedin} delay={600}>
+              <InputCard icon={<LinkedinLogo className="size-5" weight="fill" />} label="Your LinkedIn profile" hint="Helps us understand your network and background" complete={hasLinkedin} delay={600} onRemove={linkedinSource ? () => { deleteMutation.mutate({ sourceId: linkedinSource.id }); setLinkedinUrl(""); setLinkedinStatus("idle"); } : undefined}>
                 <div className="flex gap-2">
                   <Input placeholder="https://linkedin.com/in/your-name" value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAnalyzeLinkedin()} disabled={linkedinStatus === "loading"} className="h-10" />
                   <Button variant="outline" onClick={handleAnalyzeLinkedin} disabled={!linkedinUrl.trim() || linkedinStatus === "loading"} className="shrink-0">
@@ -567,7 +607,7 @@ export default function SetupPage() {
                 </div>
               </InputCard>
 
-              <InputCard icon={<FileText className="size-5" />} label="Pitch deck or one-pager" hint="PDF, PPTX, or DOCX — drag and drop" complete={sources.some((s) => s.type === "document" && s.status === "complete")} delay={700}>
+              <InputCard icon={<FileText className="size-5" />} label="Pitch deck or one-pager" hint="PDF, PPTX, or DOCX — drag and drop" complete={!!docSource} delay={700} onRemove={docSource ? () => { deleteMutation.mutate({ sourceId: docSource.id }); setDocFileName(""); } : undefined}>
                 <div
                   className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all hover:border-primary/40 hover:bg-primary/[0.02] active:scale-[0.99]"
                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/60", "bg-primary/5"); }}
@@ -612,28 +652,28 @@ export default function SetupPage() {
 
             {/* TIER 2 */}
             <TierSection title="Tell us about your target" subtitle="Help the AI narrow down your ideal customer" defaultOpen={false} delay={800}>
-              <InputCard icon={<Users className="size-5" />} label="Describe your ideal customer" hint="Be as specific as you can" complete={idealDescription.length > 20} delay={900}>
+              <InputCard icon={<Users className="size-5" />} label="Describe your ideal customer" hint="Be as specific as you can" complete={idealDescription.length > 20} delay={900} onRemove={idealSource ? () => { deleteMutation.mutate({ sourceId: idealSource.id }); setIdealDescription(""); } : undefined}>
                 <textarea
                   placeholder="Ex: I target Head of Sales in B2B SaaS companies, Series A-B, 50-200 employees, in Western Europe..."
                   value={idealDescription}
-                  onChange={(e) => setIdealDescription(e.target.value)}
+                  onChange={(e) => { setIdealDescription(e.target.value); autoSaveText("ideal_customer", e.target.value); }}
                   rows={4}
                   className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                 />
               </InputCard>
 
-              <InputCard icon={<Sparkle className="size-5" />} label="Dream customers" hint="3-5 companies you'd love to sell to" complete={dreamCompanies.length > 5} delay={1000}>
-                <Input placeholder="Notion, Figma, Linear, Vercel..." value={dreamCompanies} onChange={(e) => setDreamCompanies(e.target.value)} className="h-10" />
+              <InputCard icon={<Sparkle className="size-5" />} label="Dream customers" hint="3-5 companies you'd love to sell to" complete={dreamCompanies.length > 5} delay={1000} onRemove={dreamSource ? () => { deleteMutation.mutate({ sourceId: dreamSource.id }); setDreamCompanies(""); } : undefined}>
+                <Input placeholder="Notion, Figma, Linear, Vercel..." value={dreamCompanies} onChange={(e) => { setDreamCompanies(e.target.value); autoSaveText("dream_companies", e.target.value); }} className="h-10" />
               </InputCard>
 
-              <InputCard icon={<Lightning className="size-5" weight="fill" />} label="Known competitors" hint="Who else solves the same problem?" complete={competitors.length > 5} delay={1100}>
-                <Input placeholder="Competitor A, Competitor B..." value={competitors} onChange={(e) => setCompetitors(e.target.value)} className="h-10" />
+              <InputCard icon={<Lightning className="size-5" weight="fill" />} label="Known competitors" hint="Who else solves the same problem?" complete={competitors.length > 5} delay={1100} onRemove={competitorsSource ? () => { deleteMutation.mutate({ sourceId: competitorsSource.id }); setCompetitors(""); } : undefined}>
+                <Input placeholder="Competitor A, Competitor B..." value={competitors} onChange={(e) => { setCompetitors(e.target.value); autoSaveText("competitors", e.target.value); }} className="h-10" />
               </InputCard>
             </TierSection>
 
             {/* TIER 3 */}
             <TierSection title="Power user" subtitle="More data = better ICP precision" defaultOpen={false} delay={1200}>
-              <InputCard icon={<FileText className="size-5" />} label="CSV of beta users or customers" complete={csvUploaded || sources.some((s) => s.type === "csv_customers" && s.status === "complete")} delay={1300}>
+              <InputCard icon={<FileText className="size-5" />} label="CSV of beta users or customers" complete={csvUploaded || !!csvSource} delay={1300} onRemove={csvSource ? () => { deleteMutation.mutate({ sourceId: csvSource.id }); setCsvFileName(""); setCsvUploaded(false); } : undefined}>
                 <div
                   className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all hover:border-primary/40"
                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/60", "bg-primary/5"); }}
@@ -672,7 +712,7 @@ export default function SetupPage() {
                 </div>
               </InputCard>
 
-              <InputCard icon={<Database className="size-5" />} label="CRM connection" hint="HubSpot Private App token" complete={crmConnected} delay={1400}>
+              <InputCard icon={<Database className="size-5" />} label="CRM connection" hint="HubSpot Private App token" complete={crmConnected} delay={1400} onRemove={crmConnected ? () => { disconnectMutation.mutate({ type: "hubspot" }); setCrmConnected(false); } : undefined}>
                 <CrmConnect onConnect={() => setCrmConnected(true)} />
               </InputCard>
             </TierSection>

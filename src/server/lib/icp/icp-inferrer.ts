@@ -337,16 +337,28 @@ export async function inferIcpProfile(
     temperature: 0.3,
   });
 
+  logger.info("[icp/infer] RAW LLM result type: " + typeof rawResult, {
+    preview: JSON.stringify(rawResult).slice(0, 500),
+  });
+
   const unwrapped = unwrapLlmOutput(rawResult);
 
-  logger.info("[icp/infer] LLM output (unwrapped)", {
+  logger.info("[icp/infer] Unwrapped output", {
     keys: unwrapped ? Object.keys(unwrapped) : "null",
+    rolesCount: Array.isArray(unwrapped?.roles) ? (unwrapped.roles as unknown[]).length : "not-array",
+    industriesCount: Array.isArray(unwrapped?.industries) ? (unwrapped.industries as unknown[]).length : "not-array",
+    preview: JSON.stringify(unwrapped).slice(0, 300),
   });
 
   const parseResult = llmOutputSchema.safeParse(unwrapped);
   if (!parseResult.success) {
-    logger.warn("[icp/infer] Schema validation issues, using partial data", {
-      errors: parseResult.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`),
+    logger.warn("[icp/infer] Schema validation FAILED", {
+      errors: parseResult.error.issues.slice(0, 5).map((i) => `${i.path.join(".")}: ${i.message}`),
+    });
+  } else {
+    logger.info("[icp/infer] Schema parse SUCCESS", {
+      roles: parseResult.data.roles.length,
+      industries: parseResult.data.industries.length,
     });
   }
   const llmResult = parseResult.success ? parseResult.data : llmOutputSchema.parse({});
