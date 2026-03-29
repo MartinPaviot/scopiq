@@ -157,6 +157,113 @@ function ExpandButton({ tamBuildId }: { tamBuildId: string }) {
   );
 }
 
+// ─── Account Expand Panel ─────────────────────────
+
+interface SignalData {
+  name: string;
+  detected: boolean;
+  evidence: string;
+  reasoning: string;
+  sources: Array<{ url: string; title: string }>;
+  points: number;
+}
+
+function AccountExpandPanel({ account, tamBuildId }: {
+  account: Record<string, unknown>;
+  tamBuildId: string;
+}) {
+  const contactsQuery = trpc.tam.getLeads.useQuery({
+    tamBuildId,
+    tamAccountId: account.id as string,
+    limit: 10,
+  });
+
+  const contacts = (contactsQuery.data?.leads ?? []) as Array<Record<string, unknown>>;
+  const signals = (account.signals ?? []) as SignalData[];
+  const detectedSignals = signals.filter((s) => s.detected);
+
+  // Recommended action
+  const connectionNames = (account.connectionNames ?? []) as string[];
+  const hasConnection = connectionNames.length > 0;
+  const hasFunding = !!(account as Record<string, boolean>).fundedSignal;
+  const hasHiring = !!(account as Record<string, boolean>).hiringSignal;
+
+  const recommendation = hasConnection
+    ? `Warm intro via ${connectionNames[0]}`
+    : hasFunding
+      ? "Reference their recent funding in outreach"
+      : hasHiring
+        ? "Mention their team growth"
+        : "Cold outreach — lead with value prop";
+
+  return (
+    <div className="px-4 py-3 bg-muted/20 border-b animate-fade-in-up">
+      <div className="grid grid-cols-3 gap-4 max-w-5xl">
+        {/* Signals */}
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Signals</p>
+          {detectedSignals.length > 0 ? (
+            <div className="space-y-1.5">
+              {detectedSignals.map((s) => (
+                <div key={s.name} className="flex items-start gap-2">
+                  <Lightning className="size-3 text-amber-500 mt-0.5 shrink-0" weight="fill" />
+                  <div>
+                    <p className="text-[11px] font-medium text-foreground">{s.name} <span className="text-emerald-600">+{s.points}pts</span></p>
+                    <p className="text-[10px] text-muted-foreground">{s.evidence}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground italic">No signals detected yet</p>
+          )}
+          <div className="mt-3 p-2 rounded-md bg-primary/5 border border-primary/10">
+            <p className="text-[10px] font-medium text-primary">{recommendation}</p>
+          </div>
+        </div>
+
+        {/* Contacts */}
+        <div className="col-span-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Contacts ({contacts.length})
+          </p>
+          {contactsQuery.isLoading ? (
+            <p className="text-[10px] text-muted-foreground">Loading contacts...</p>
+          ) : contacts.length > 0 ? (
+            <div className="space-y-1">
+              {contacts.map((c: Record<string, unknown>) => (
+                <div key={c.id as string} className="flex items-center gap-3 py-1 px-2 rounded hover:bg-muted/50">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[11px] font-medium text-foreground">
+                      {c.firstName as string} {c.lastName as string}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground ml-2">{c.title as string}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[9px]">
+                    {c.hasEmail ? (
+                      <span className="text-emerald-600">Email available</span>
+                    ) : (
+                      <span className="text-muted-foreground/50">No email</span>
+                    )}
+                    {!!c.hasDirectPhone && <span className="text-emerald-600">Phone</span>}
+                    {c.linkedinUrl ? (
+                      <a href={c.linkedinUrl as string} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        LinkedIn
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground italic">No contacts loaded for this account</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────
 
 export default function MarketPage() {
@@ -167,6 +274,8 @@ export default function MarketPage() {
   const [tierFilter, setTierFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("heatScore");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"accounts" | "contacts">("accounts");
 
   // Load latest build
   const buildQuery = trpc.tam.getLatestBuild.useQuery();
@@ -197,9 +306,17 @@ export default function MarketPage() {
   const accounts = accountsQuery.data?.accounts ?? [];
   const totalFiltered = accountsQuery.data?.totalFiltered ?? 0;
 
+  // Load contacts for flat view
+  const contactsQuery = trpc.tam.getLeads.useQuery(
+    { tamBuildId: tamBuildId ?? "", limit: 200, sortBy: "heatScore", sortOrder: "desc" },
+    { enabled: !!tamBuildId && viewMode === "contacts" },
+  );
+  const contactsList = (contactsQuery.data?.leads ?? []) as Array<Record<string, unknown>>;
+
   // Virtual scrolling
+  const itemCount = viewMode === "accounts" ? accounts.length : contactsList.length;
   const rowVirtualizer = useVirtualizer({
-    count: accounts.length,
+    count: itemCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
@@ -276,6 +393,22 @@ export default function MarketPage() {
           />
         </div>
 
+        {/* View toggle */}
+        <div className="flex rounded-md border text-[10px] font-medium overflow-hidden">
+          <button
+            onClick={() => setViewMode("accounts")}
+            className={cn("px-2.5 py-1 transition-colors", viewMode === "accounts" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}
+          >
+            Companies
+          </button>
+          <button
+            onClick={() => setViewMode("contacts")}
+            className={cn("px-2.5 py-1 transition-colors border-l", viewMode === "contacts" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}
+          >
+            Contacts
+          </button>
+        </div>
+
         {/* Tier filter pills */}
         <div className="flex gap-1">
           {["A", "B", "C", "D"].map((tier) => (
@@ -308,31 +441,70 @@ export default function MarketPage() {
       </div>
 
       {/* Table Header */}
-      <div className="grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b bg-muted/30 shrink-0">
-        <button className="text-left flex items-center gap-1" onClick={() => toggleSort("name")}>
-          Company <SortIcon field="name" />
-        </button>
-        <button className="text-left flex items-center gap-1" onClick={() => toggleSort("industry")}>
-          Industry <SortIcon field="industry" />
-        </button>
-        <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("employeeCount")}>
-          Size <SortIcon field="employeeCount" />
-        </button>
-        <span>Location</span>
-        <button className="text-center flex items-center gap-1 justify-center" onClick={() => toggleSort("tier")}>
-          Tier <SortIcon field="tier" />
-        </button>
-        <span className="text-center">Heat</span>
-        <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("heatScore")}>
-          Score <SortIcon field="heatScore" />
-        </button>
-        <span className="text-center">Sig</span>
-      </div>
+      {viewMode === "accounts" ? (
+        <div className="grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b bg-muted/30 shrink-0">
+          <button className="text-left flex items-center gap-1" onClick={() => toggleSort("name")}>Company <SortIcon field="name" /></button>
+          <button className="text-left flex items-center gap-1" onClick={() => toggleSort("industry")}>Industry <SortIcon field="industry" /></button>
+          <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("employeeCount")}>Size <SortIcon field="employeeCount" /></button>
+          <span>Location</span>
+          <button className="text-center flex items-center gap-1 justify-center" onClick={() => toggleSort("tier")}>Tier <SortIcon field="tier" /></button>
+          <span className="text-center">Heat</span>
+          <button className="text-right flex items-center gap-1 justify-end" onClick={() => toggleSort("heatScore")}>Score <SortIcon field="heatScore" /></button>
+          <span className="text-center">Sig</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-[1.5fr_1fr_1.5fr_1fr_80px_80px_60px] gap-px px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b bg-muted/30 shrink-0">
+          <span>Name</span>
+          <span>Title</span>
+          <span>Company</span>
+          <span>Industry</span>
+          <span className="text-center">Email</span>
+          <span className="text-center">Phone</span>
+          <span className="text-center">Score</span>
+        </div>
+      )}
 
       {/* Virtual Scrolled Rows */}
       <div ref={parentRef} className="flex-1 overflow-auto scrollbar-thin">
         <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          {viewMode === "contacts" ? (
+            // ── Contact Flat View ──
+            rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const c = contactsList[virtualRow.index];
+              if (!c) return null;
+              return (
+                <div
+                  key={c.id as string}
+                  className="absolute inset-x-0 grid grid-cols-[1.5fr_1fr_1.5fr_1fr_80px_80px_60px] gap-px px-4 items-center row-hover border-b border-border/30"
+                  style={{ height: `${ROW_HEIGHT}px`, transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <span className="text-xs font-medium text-foreground truncate">
+                    {c.firstName as string} {c.lastName as string}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground truncate">{c.title as string}</span>
+                  <span className="text-[11px] text-muted-foreground truncate">{c.companyName as string}</span>
+                  <span className="text-[10px] text-muted-foreground truncate">{(c.companyIndustry as string) ?? "—"}</span>
+                  <div className="flex justify-center">
+                    {c.hasEmail ? (
+                      <span className="text-[9px] text-emerald-600 font-medium">Available</span>
+                    ) : (
+                      <span className="text-[9px] text-muted-foreground/40">—</span>
+                    )}
+                  </div>
+                  <div className="flex justify-center">
+                    {c.hasDirectPhone ? (
+                      <span className="text-[9px] text-emerald-600 font-medium">Available</span>
+                    ) : (
+                      <span className="text-[9px] text-muted-foreground/40">—</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-right tabular-nums font-medium">{c.heatScore as number}</span>
+                </div>
+              );
+            })
+          ) : (
+            // ── Account View ──
+            rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const account = accounts[virtualRow.index];
             if (!account) return null;
 
@@ -340,13 +512,21 @@ export default function MarketPage() {
               account.hiringSignal, account.fundedSignal, account.keywordMatch,
             ].filter(Boolean).length;
 
+            const isExpanded = expandedId === account.id;
+
             return (
               <div
                 key={account.id}
-                className="absolute inset-x-0 grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 items-center row-hover cursor-pointer border-b border-border/30"
+                className="absolute inset-x-0"
+                style={{
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+              <div
+                className="grid grid-cols-[2fr_1fr_80px_1fr_60px_60px_60px_40px] gap-px px-4 items-center row-hover cursor-pointer border-b border-border/30"
+                onClick={() => setExpandedId(isExpanded ? null : account.id)}
                 style={{
                   height: `${ROW_HEIGHT}px`,
-                  transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
                 {/* Company */}
@@ -407,8 +587,13 @@ export default function MarketPage() {
                   )}
                 </div>
               </div>
+              {isExpanded && (
+                <AccountExpandPanel account={account as unknown as Record<string, unknown>} tamBuildId={tamBuildId!} />
+              )}
+              </div>
             );
-          })}
+          })
+          )}
         </div>
       </div>
     </div>

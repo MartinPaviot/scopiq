@@ -2,7 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Rocket, FileText, Database, LinkedinLogo } from "@phosphor-icons/react";
+import {
+  Rocket, FileText, Database, LinkedinLogo,
+  MagnifyingGlass, ChartBar, Lightning, CheckCircle, Spinner,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { WebsiteSource } from "@/components/setup/website-source";
 import { CsvSource } from "@/components/setup/csv-source";
@@ -10,22 +13,111 @@ import { LinkedInSource } from "@/components/setup/linkedin-source";
 import { SourceCard } from "@/components/setup/source-card";
 import { trpc } from "@/lib/trpc-client";
 import { toast } from "sonner";
+import { useBuildStream, type BuildProgress } from "@/lib/use-build-stream";
+import { cn } from "@/lib/utils";
+
+// ─── ICP + TAM Progress Panel ──────────────────
+
+const ICP_PHASES = [
+  { id: "analyzing", label: "Analyzing your data sources...", icon: MagnifyingGlass },
+  { id: "inferring", label: "Generating ICP with AI...", icon: Lightning },
+  { id: "done", label: "ICP ready!", icon: CheckCircle },
+];
+
+const TAM_PHASES = [
+  { id: "counting", label: "Counting your market...", icon: ChartBar },
+  { id: "loading-top", label: "Loading top accounts...", icon: MagnifyingGlass },
+  { id: "scoring", label: "Scoring accounts...", icon: ChartBar },
+  { id: "complete", label: "TAM build complete!", icon: CheckCircle },
+];
+
+function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgress: BuildProgress | null }) {
+  const allPhases = tamProgress
+    ? [...ICP_PHASES, ...TAM_PHASES]
+    : ICP_PHASES;
+
+  const currentId = tamProgress?.phase ?? icpPhase;
+
+  return (
+    <div className="max-w-md mx-auto mt-8 p-6 border rounded-xl bg-card animate-fade-in-up">
+      <h3 className="text-sm font-semibold text-foreground mb-4">Building your market intelligence...</h3>
+      <div className="space-y-3">
+        {allPhases.map((phase) => {
+          const Icon = phase.icon;
+          const isCurrent = phase.id === currentId;
+          const isPast = allPhases.indexOf(phase) < allPhases.findIndex((p) => p.id === currentId);
+          const isDone = phase.id === "done" && icpPhase === "done";
+          const isComplete = phase.id === "complete" && tamProgress?.type === "complete";
+
+          return (
+            <div key={phase.id} className={cn(
+              "flex items-center gap-3 text-sm transition-colors",
+              isCurrent ? "text-foreground font-medium" : isPast || isDone || isComplete ? "text-emerald-600" : "text-muted-foreground/50",
+            )}>
+              {isCurrent && !isDone && !isComplete ? (
+                <Spinner className="size-4 animate-spin text-primary shrink-0" />
+              ) : isPast || isDone || isComplete ? (
+                <CheckCircle className="size-4 text-emerald-500 shrink-0" weight="fill" />
+              ) : (
+                <Icon className="size-4 shrink-0" />
+              )}
+              <span>{phase.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      {tamProgress?.data?.loadedCount != null && (
+        <div className="mt-3 pt-3 border-t text-xs text-muted-foreground tabular-nums">
+          {tamProgress.data.loadedCount} accounts loaded
+          {tamProgress.data.totalCount ? ` / ${tamProgress.data.totalCount} total` : ""}
+          {tamProgress.data.scoredCount ? ` · ${tamProgress.data.scoredCount} scored` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Page ──────────────────────────────────────
 
 export default function SetupPage() {
   const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [icpPhase, setIcpPhase] = useState("idle");
+  const { progress: tamProgress, isStreaming, start: startStream } = useBuildStream();
 
   const sourcesQuery = trpc.ingestion.getSources.useQuery();
+  const workspaceQuery = trpc.workspace.getSettings.useQuery();
+
   const inferMutation = trpc.icp.infer.useMutation({
     onSuccess: () => {
-      toast.success("ICP generated! Redirecting to review...");
-      router.push("/icp");
+      setIcpPhase("done");
+      toast.success("ICP generated!");
+
+      // Auto-start TAM build
+      const companyUrl = (workspaceQuery.data as Record<string, string> | undefined)?.companyUrl ?? "";
+      tamBuildMutation.mutate({ siteUrl: companyUrl || "https://example.com" });
     },
     onError: (err) => {
       toast.error(err.message ?? "Failed to generate ICP");
       setIsGenerating(false);
+      setIcpPhase("idle");
     },
   });
+
+  const tamBuildMutation = trpc.tam.startBuild.useMutation({
+    onSuccess: (data) => {
+      // Start SSE stream for TAM build progress
+      startStream(data.tamBuildId);
+    },
+    onError: (err) => {
+      toast.error(err.message ?? "Failed to start TAM build");
+    },
+  });
+
+  // Redirect to market when TAM build completes
+  if (tamProgress?.type === "complete") {
+    setTimeout(() => router.push("/market"), 1500);
+  }
 
   const sources = (sourcesQuery.data ?? []) as Array<{ type: string; status: string }>;
   const completedCount = sources.filter((s) => s.status === "complete").length;
@@ -33,7 +125,12 @@ export default function SetupPage() {
 
   const handleGenerateIcp = () => {
     setIsGenerating(true);
-    inferMutation.mutate();
+    setIcpPhase("analyzing");
+    // Simulate a brief analyzing phase then start inference
+    setTimeout(() => {
+      setIcpPhase("inferring");
+      inferMutation.mutate();
+    }, 800);
   };
 
   return (
@@ -126,22 +223,28 @@ export default function SetupPage() {
           </SourceCard>
         </div>
 
-        {/* Generate ICP CTA */}
-        <div className="mt-8 flex justify-center">
-          <Button
-            size="lg"
-            className="gap-2 px-8"
-            disabled={!hasWebsite || isGenerating}
-            onClick={handleGenerateIcp}
-          >
-            <Rocket className="size-4" weight="fill" />
-            {isGenerating ? "Generating ICP..." : "Generate ICP"}
-          </Button>
-        </div>
-        {!hasWebsite && (
-          <p className="text-center text-xs text-muted-foreground mt-2">
-            Add your website URL to get started
-          </p>
+        {/* Generate ICP CTA or Progress Panel */}
+        {isGenerating ? (
+          <ProgressPanel icpPhase={icpPhase} tamProgress={tamProgress} />
+        ) : (
+          <>
+            <div className="mt-8 flex justify-center">
+              <Button
+                size="lg"
+                className="gap-2 px-8"
+                disabled={!hasWebsite || isGenerating}
+                onClick={handleGenerateIcp}
+              >
+                <Rocket className="size-4" weight="fill" />
+                Generate ICP & Build TAM
+              </Button>
+            </div>
+            {!hasWebsite && (
+              <p className="text-center text-xs text-muted-foreground mt-2">
+                Add your website URL to get started
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

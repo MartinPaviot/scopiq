@@ -871,6 +871,112 @@ export const tamRouter = router({
 
       return { importId: importRecord.id, count: input.customers.length };
     }),
+
+  /**
+   * Sync TAM accounts + contacts to HubSpot.
+   * Creates/updates Companies by domain, Contacts by email.
+   */
+  syncToHubspot: protectedProcedure
+    .input(z.object({ tamBuildId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { decrypt: decryptKey } = await import("@/lib/encryption");
+
+      const integration = await prisma.integration.findFirst({
+        where: { workspaceId: ctx.workspaceId, type: "hubspot", status: "ACTIVE" },
+      });
+
+      if (!integration?.accessToken) {
+        throw new Error("Connect HubSpot in Settings first");
+      }
+
+      const token = decryptKey(integration.accessToken);
+
+      // Load Tier A+B accounts with contacts
+      const accounts = await prisma.tamAccount.findMany({
+        where: { tamBuildId: input.tamBuildId, tier: { in: ["A", "B"] } },
+        include: { contacts: { where: { email: { not: null } } } },
+        orderBy: { heatScore: "desc" },
+        take: 200,
+      });
+
+      let companiesCreated = 0;
+      let contactsCreated = 0;
+      let skipped = 0;
+
+      for (const account of accounts) {
+        if (!account.domain) { skipped++; continue; }
+
+        // Create/update Company
+        try {
+          const searchRes = await fetch("https://api.hubapi.com/crm/v3/objects/companies/search", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filterGroups: [{ filters: [{ propertyName: "domain", operator: "EQ", value: account.domain }] }],
+            }),
+          });
+          const searchData = await searchRes.json() as { total: number; results: Array<{ id: string }> };
+
+          if (searchData.total === 0) {
+            await fetch("https://api.hubapi.com/crm/v3/objects/companies", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                properties: {
+                  name: account.name,
+                  domain: account.domain,
+                  industry: account.industry ?? "",
+                  numberofemployees: String(account.employeeCount ?? ""),
+                  city: account.city ?? "",
+                  country: account.country ?? "",
+                  website: account.websiteUrl ?? "",
+                  tam_source: "Scopiq",
+                  tam_tier: account.tier ?? "",
+                  tam_heat_score: String(account.heatScore),
+                },
+              }),
+            });
+            companiesCreated++;
+          } else {
+            skipped++;
+          }
+        } catch {
+          skipped++;
+        }
+
+        // Create contacts
+        for (const contact of account.contacts) {
+          if (!contact.email) continue;
+          try {
+            await fetch("https://api.hubapi.com/crm/v3/objects/contacts", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                properties: {
+                  email: contact.email,
+                  firstname: contact.firstName,
+                  lastname: contact.lastName,
+                  jobtitle: contact.title,
+                  company: contact.companyName,
+                  tam_source: "Scopiq",
+                },
+              }),
+            });
+            contactsCreated++;
+          } catch {
+            // Duplicate or API error — skip
+          }
+        }
+      }
+
+      logger.info("[tam/syncToHubspot] Complete", {
+        companiesCreated,
+        contactsCreated,
+        skipped,
+      });
+
+      return { companiesCreated, contactsCreated, skipped };
+    }),
 });
 
 // ─── Filter Counts Builder (Account-Based) ──────────────
