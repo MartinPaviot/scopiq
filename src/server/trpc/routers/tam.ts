@@ -46,22 +46,141 @@ export const tamRouter = router({
   startBuild: protectedProcedure
     .input(z.object({ siteUrl: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId;
+
       const tamBuild = await prisma.tamBuild.create({
         data: {
-          workspaceId: ctx.workspaceId,
+          workspaceId,
           siteUrl: input.siteUrl,
-          status: "pending",
+          status: "building",
+          phase: "counting",
         },
       });
 
-      await inngest.send({
-        name: "tam/build.requested",
-        data: {
-          workspaceId: ctx.workspaceId,
-          tamBuildId: tamBuild.id,
-          siteUrl: input.siteUrl,
-        },
-      });
+      // Run TAM build inline (no Inngest dependency for demo reliability)
+      // Background: don't await — return immediately, build runs async
+      (async () => {
+        try {
+          // Get ICP
+          const icpProfile = await prisma.icpProfile.findFirst({
+            where: { workspaceId, isActive: true },
+            orderBy: { version: "desc" },
+          });
+
+          if (!icpProfile) {
+            await prisma.tamBuild.update({ where: { id: tamBuild.id }, data: { status: "failed", phase: "failed", errorMessage: "No ICP found" } });
+            return;
+          }
+
+          const industries = (icpProfile.industries ?? []) as string[];
+          const empRange = (icpProfile.employeeRange ?? { min: 10, max: 10000 }) as { min: number; max: number };
+          const geos = (icpProfile.geographies ?? []) as string[];
+
+          const orgFilters = {
+            organization_num_employees_ranges: [`${empRange.min},${empRange.max}`],
+            q_organization_keyword_tags: industries.slice(0, 5),
+            organization_locations: geos.length > 0 ? geos : ["United States"],
+          };
+
+          const apiKey = process.env.APOLLO_API_KEY;
+          if (!apiKey) {
+            await prisma.tamBuild.update({ where: { id: tamBuild.id }, data: { status: "failed", phase: "failed", errorMessage: "APOLLO_API_KEY not set" } });
+            return;
+          }
+
+          // Count
+          const countRes = await fetch("https://api.apollo.io/api/v1/organizations/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+            body: JSON.stringify({ ...orgFilters, per_page: 1, page: 1 }),
+          });
+          const countData = await countRes.json() as { pagination?: { total_entries: number } };
+          const totalCount = countData.pagination?.total_entries ?? 0;
+
+          await prisma.tamBuild.update({ where: { id: tamBuild.id }, data: { totalCount, phase: "loading-top" } });
+
+          // Load pages
+          const TARGET_PAGES = 5;
+          let loaded = 0;
+          for (let page = 1; page <= TARGET_PAGES; page++) {
+            const res = await fetch("https://api.apollo.io/api/v1/organizations/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+              body: JSON.stringify({ ...orgFilters, per_page: 100, page }),
+            });
+            const data = await res.json() as { organizations?: Array<Record<string, unknown>> };
+            const orgs = data.organizations ?? [];
+            if (orgs.length === 0) break;
+
+            const accounts = orgs.filter((o) => o.name).map((o) => ({
+              workspaceId,
+              tamBuildId: tamBuild.id,
+              name: String(o.name),
+              domain: o.primary_domain ? String(o.primary_domain) : null,
+              industry: o.industry ? String(o.industry) : null,
+              employeeCount: typeof o.estimated_num_employees === "number" ? o.estimated_num_employees : null,
+              foundedYear: typeof o.founded_year === "number" ? o.founded_year : null,
+              city: o.city ? String(o.city) : null,
+              country: o.country ? String(o.country) : null,
+              keywords: Array.isArray(o.keywords) ? o.keywords.map(String) : [],
+              websiteUrl: o.website_url ? String(o.website_url) : null,
+              linkedinUrl: o.linkedin_url ? String(o.linkedin_url) : null,
+              apolloOrgId: o.id ? String(o.id) : null,
+            }));
+
+            if (accounts.length > 0) {
+              await prisma.tamAccount.createMany({ data: accounts, skipDuplicates: true });
+            }
+            loaded += accounts.length;
+            await prisma.tamBuild.update({ where: { id: tamBuild.id }, data: { loadedCount: loaded } });
+
+            if (orgs.length < 100) break;
+            await new Promise((r) => setTimeout(r, 1200)); // Rate limit
+          }
+
+          // Score
+          await prisma.tamBuild.update({ where: { id: tamBuild.id }, data: { phase: "scoring" } });
+          const { scoreAccount } = await import("@/server/lib/tam/account-scorer");
+          const icpForScoring = {
+            industries,
+            employee_ranges: [`${empRange.min},${empRange.max}`],
+            geos,
+            titles: ((icpProfile.roles ?? []) as Array<{ title: string }>).map((r) => r.title),
+            keywords: (icpProfile.keywords ?? []) as string[],
+          };
+
+          const unscored = await prisma.tamAccount.findMany({ where: { tamBuildId: tamBuild.id, tier: null }, take: 500 });
+          let scored = 0;
+          for (const account of unscored) {
+            const result = scoreAccount(
+              { name: account.name, domain: account.domain, industry: account.industry, employeeCount: account.employeeCount, foundedYear: account.foundedYear, keywords: account.keywords, websiteUrl: account.websiteUrl, linkedinUrl: account.linkedinUrl, city: account.city, country: account.country },
+              icpForScoring as Parameters<typeof scoreAccount>[1],
+              { hiring: false, funded: false },
+            );
+            await prisma.tamAccount.update({
+              where: { id: account.id },
+              data: {
+                tier: result.tier, heat: result.heat, heatScore: result.heatScore,
+                industryMatch: result.industryMatch, sizeMatch: result.sizeMatch, keywordMatch: result.keywordMatch,
+                scoreBreakdown: result.breakdown as unknown as Prisma.InputJsonValue,
+                scoreReasoning: result.reasoning,
+              },
+            });
+            scored++;
+          }
+
+          await prisma.tamBuild.update({
+            where: { id: tamBuild.id },
+            data: { status: "complete", phase: "complete", scoredCount: scored, completedAt: new Date() },
+          });
+
+          logger.info("[tam/startBuild] Complete", { tamBuildId: tamBuild.id, loaded, scored, totalCount });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error("[tam/startBuild] Failed", { tamBuildId: tamBuild.id, error: msg });
+          await prisma.tamBuild.update({ where: { id: tamBuild.id }, data: { status: "failed", phase: "failed", errorMessage: msg } }).catch(() => {});
+        }
+      })();
 
       return { tamBuildId: tamBuild.id };
     }),
