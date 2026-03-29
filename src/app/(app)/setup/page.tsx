@@ -422,7 +422,7 @@ export default function SetupPage() {
             </TierSection>
 
             {/* TIER 2 */}
-            <TierSection title="Refine your target" subtitle="Help the AI narrow down your ideal customer" defaultOpen={false} delay={800}>
+            <TierSection title="Tell us about your target" subtitle="Help the AI narrow down your ideal customer" defaultOpen={false} delay={800}>
               <InputCard icon={<Users className="size-5" />} label="Describe your ideal customer" hint="Be as specific as you can" complete={idealDescription.length > 20} delay={900}>
                 <textarea
                   placeholder="Ex: I target Head of Sales in B2B SaaS companies, Series A-B, 50-200 employees, in Western Europe..."
