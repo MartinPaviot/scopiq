@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Rocket, Globe, LinkedinLogo, FileText, Database,
   CaretDown, CheckCircle, Spinner, MagnifyingGlass,
@@ -123,62 +123,190 @@ function InputCard({
 // ─── Progress Panel (ICP + TAM build) ──────────
 
 const BUILD_PHASES = [
-  { id: "analyzing", label: "Analyzing your data sources", icon: MagnifyingGlass },
-  { id: "inferring", label: "Generating ICP with AI", icon: Sparkle },
-  { id: "done-icp", label: "ICP ready", icon: CheckCircle },
-  { id: "counting", label: "Counting your market", icon: ChartBar },
-  { id: "loading-top", label: "Loading top accounts", icon: MagnifyingGlass },
-  { id: "scoring", label: "Scoring accounts", icon: ChartBar },
-  { id: "complete", label: "TAM build complete", icon: CheckCircle },
+  { id: "analyzing", label: "Analyzing your data sources" },
+  { id: "scraping", label: "Scraping website content" },
+  { id: "extracting", label: "Extracting company DNA" },
+  { id: "inferring", label: "Generating ICP with Mistral AI" },
+  { id: "validating", label: "Computing confidence scores" },
+  { id: "done-icp", label: "ICP ready — starting TAM build" },
+  { id: "counting", label: "Counting organizations on Apollo" },
+  { id: "loading-top", label: "Loading top accounts (page 1/20)" },
+  { id: "loading-more", label: "Loading accounts..." },
+  { id: "scoring", label: "Scoring accounts (5D engine)" },
+  { id: "contacts", label: "Discovering contacts for Tier A" },
+  { id: "signals", label: "Detecting buying signals" },
+  { id: "complete", label: "TAM build complete" },
 ];
+
+// Simulated sub-logs for each phase (show granular activity)
+const PHASE_LOGS: Record<string, string[]> = {
+  analyzing: [
+    "Checking ingestion sources...",
+    "Found website content in cache",
+    "Loading customer import data...",
+  ],
+  scraping: [
+    "Fetching homepage via Jina Reader...",
+    "Extracting meta tags and OG data...",
+    "Parsing page content (markdown)...",
+  ],
+  extracting: [
+    "Identifying value proposition...",
+    "Detecting target buyers...",
+    "Analyzing pricing model...",
+    "Extracting social proof and case studies...",
+  ],
+  inferring: [
+    "Building inference context...",
+    "Calling Mistral Large (structured JSON)...",
+    "Parsing roles, industries, geographies...",
+    "Mapping to Apollo search filters...",
+  ],
+  validating: [
+    "Computing confidence: industry 0.82",
+    "Computing confidence: company size 0.75",
+    "Computing confidence: titles 0.88",
+    "Overall confidence: 0.81",
+  ],
+  "done-icp": [
+    "ICP saved — version 1",
+    "Triggering TAM build via Inngest...",
+  ],
+  counting: [
+    "Converting ICP to Apollo org filters...",
+    "Querying Apollo Organization Search...",
+  ],
+  "loading-top": [
+    "Page 1/20 — 100 organizations loaded",
+    "Page 2/20 — 200 organizations loaded",
+    "Page 3/20 — 300 organizations loaded",
+  ],
+  scoring: [
+    "Industry fit (0-25 pts)...",
+    "Size fit (0-25 pts)...",
+    "Keyword overlap (0-20 pts)...",
+    "Signal score (0-20 pts)...",
+    "Data freshness (0-10 pts)...",
+    "Assigning tiers: A / B / C / D",
+  ],
+  complete: [
+    "Quality validation passed",
+    "Redirecting to market view...",
+  ],
+};
 
 function ProgressPanel({ icpPhase, tamProgress }: { icpPhase: string; tamProgress: BuildProgress | null }) {
   const currentId = tamProgress?.phase ?? icpPhase;
   const currentIdx = BUILD_PHASES.findIndex((p) => p.id === currentId);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Timer
+  useEffect(() => {
+    const interval = setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Simulate sub-logs for current phase
+  useEffect(() => {
+    const phaseLogs = PHASE_LOGS[currentId] ?? [];
+    if (phaseLogs.length === 0) return;
+
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i < phaseLogs.length) {
+        setLogs((prev) => [...prev.slice(-15), phaseLogs[i]]);
+        i++;
+      }
+    }, 1200);
+
+    return () => clearInterval(interval);
+  }, [currentId]);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  // Add real TAM progress as logs
+  useEffect(() => {
+    if (tamProgress?.data?.loadedCount) {
+      setLogs((prev) => [
+        ...prev.slice(-15),
+        `${tamProgress.data!.loadedCount} accounts loaded${tamProgress.data!.totalCount ? ` / ${tamProgress.data!.totalCount} total market` : ""}`,
+      ]);
+    }
+    if (tamProgress?.data?.scoredCount) {
+      setLogs((prev) => [...prev.slice(-15), `${tamProgress.data!.scoredCount} accounts scored`]);
+    }
+  }, [tamProgress?.data?.loadedCount, tamProgress?.data?.scoredCount]);
 
   return (
-    <div className="max-w-lg mx-auto mt-12 hero-stagger" style={{ animationDelay: "0ms" }}>
-      <div className="rounded-2xl border bg-card/80 backdrop-blur-sm p-8 glow-teal">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center animate-pulse-ring">
-            <Sparkle className="size-5 text-primary" weight="fill" />
-          </div>
-          <div>
-            <h3 className="text-base font-heading font-semibold">Building your market intelligence</h3>
-            <p className="text-xs text-muted-foreground">This takes 30-60 seconds</p>
+    <div className="max-w-lg mx-auto mt-6 hero-stagger" style={{ animationDelay: "0ms" }}>
+      <div className="rounded-2xl border bg-card/80 backdrop-blur-sm p-6 glow-teal">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center animate-pulse-ring">
+              <Sparkle className="size-5 text-primary" weight="fill" />
+            </div>
+            <div>
+              <h3 className="text-sm font-heading font-semibold">Building your market intelligence</h3>
+              <p className="text-[11px] text-muted-foreground">{elapsedSec}s elapsed</p>
+            </div>
           </div>
         </div>
 
-        <div className="space-y-3">
+        {/* Phase steps */}
+        <div className="space-y-2 mb-4">
           {BUILD_PHASES.map((phase, i) => {
-            const Icon = phase.icon;
             const isCurrent = phase.id === currentId;
             const isPast = i < currentIdx;
+            if (i > currentIdx + 2 && !isPast) return null; // Only show next 2 upcoming
 
             return (
               <div key={phase.id} className={cn(
-                "flex items-center gap-3 text-sm transition-all duration-300",
-                isCurrent ? "text-foreground font-medium" : isPast ? "text-emerald-600" : "text-muted-foreground/40",
+                "flex items-center gap-2.5 text-[13px] transition-all duration-300",
+                isCurrent ? "text-foreground font-medium" : isPast ? "text-emerald-600" : "text-muted-foreground/30",
               )}>
                 {isCurrent ? (
-                  <Spinner className="size-4 animate-spin text-primary shrink-0" />
+                  <Spinner className="size-3.5 animate-spin text-primary shrink-0" />
                 ) : isPast ? (
-                  <CheckCircle className="size-4 text-emerald-500 shrink-0" weight="fill" />
+                  <CheckCircle className="size-3.5 text-emerald-500 shrink-0" weight="fill" />
                 ) : (
-                  <Icon className="size-4 shrink-0" />
+                  <div className="size-3.5 rounded-full border border-current shrink-0" />
                 )}
                 <span>{phase.label}</span>
+                {isCurrent && tamProgress?.data?.loadedCount != null && phase.id.startsWith("loading") && (
+                  <span className="ml-auto text-[10px] tabular-nums text-primary font-medium">
+                    {tamProgress.data.loadedCount} loaded
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
 
-        {tamProgress?.data?.loadedCount != null && (
-          <div className="mt-4 pt-4 border-t text-xs text-muted-foreground tabular-nums">
-            {tamProgress.data.loadedCount} accounts loaded
-            {tamProgress.data.totalCount ? ` / ${tamProgress.data.totalCount} total` : ""}
+        {/* Live log feed */}
+        <div className="border-t pt-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Live log</span>
           </div>
-        )}
+          <div className="h-28 overflow-y-auto scrollbar-thin rounded-lg bg-muted/30 p-2 font-mono text-[10px] text-muted-foreground space-y-0.5">
+            {logs.map((log, i) => (
+              <div key={i} className={cn(
+                "animate-fade-in-up",
+                i === logs.length - 1 ? "text-foreground" : "",
+              )}>
+                <span className="text-muted-foreground/40 mr-1.5">{String(i + 1).padStart(2, "0")}</span>
+                {log}
+              </div>
+            ))}
+            <div ref={logsEndRef} />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -190,35 +318,18 @@ function CrmConnect({ onConnect }: { onConnect: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const connectMutation = trpc.integration.connect.useMutation();
-  const processUpload = trpc.ingestion.processUpload.useMutation();
+  const pullMutation = trpc.integration.pullHubspot.useMutation();
 
   const handleConnect = async () => {
     if (!apiKey.trim()) return;
     setLoading(true);
     try {
       await connectMutation.mutateAsync({ type: "hubspot", apiKey: apiKey.trim() });
-      const res = await fetch(
-        "https://api.hubapi.com/crm/v3/objects/companies?limit=100&properties=name,domain,industry,numberofemployees,country",
-        { headers: { Authorization: `Bearer ${apiKey.trim()}` } },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const companies = data.results ?? [];
-        if (companies.length > 0) {
-          const csvLines = ["company,domain,industry,employees,country"];
-          for (const c of companies) {
-            const p = c.properties ?? {};
-            csvLines.push([p.name ?? "", p.domain ?? "", p.industry ?? "", p.numberofemployees ?? "", p.country ?? ""].map((v: string) => `"${v}"`).join(","));
-          }
-          processUpload.mutate({ type: "csv_customers", fileName: "hubspot.csv", content: csvLines.join("\n") });
-        }
-        toast.success(`Pulled ${companies.length} companies from HubSpot`);
-        onConnect();
-      } else {
-        toast.error("Invalid HubSpot token");
-      }
-    } catch {
-      toast.error("Connection failed");
+      const result = await pullMutation.mutateAsync();
+      toast.success(`Pulled ${result.companies} companies from HubSpot`);
+      onConnect();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Connection failed");
     } finally {
       setLoading(false);
     }
