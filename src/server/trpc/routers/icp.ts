@@ -209,29 +209,25 @@ Return a FLAT JSON object (no wrapper) with EXACTLY these fields:
 
     if (!profile) return null;
 
-    // Parse JSON fields
-    const data = icpProfileDataSchema.safeParse({
-      roles: profile.roles,
-      industries: profile.industries,
-      employeeRange: profile.employeeRange,
-      geographies: profile.geographies,
-      keywords: profile.keywords,
-      buyingSignals: profile.buyingSignals,
-      disqualifiers: profile.disqualifiers,
-      competitors: profile.competitors,
-      segments: profile.segments,
-      negativeIcp: profile.negativeIcp,
-      confidence: profile.confidence,
-      customerPatterns: profile.customerPatterns,
-    });
-
+    // Direct field access — no schema parsing (avoid silent failures)
     return {
       id: profile.id,
       version: profile.version,
       source: profile.source,
       createdAt: profile.createdAt,
-      data: data.success ? data.data : null,
-      raw: profile,
+      data: {
+        roles: (profile.roles ?? []) as Array<{ title: string; variations?: string[]; seniority?: string; why?: string }>,
+        industries: (profile.industries ?? []) as string[],
+        employeeRange: (profile.employeeRange ?? { min: 10, max: 10000, sweetSpot: 200 }) as { min: number; max: number; sweetSpot?: number },
+        geographies: (profile.geographies ?? []) as string[],
+        keywords: (profile.keywords ?? []) as string[],
+        buyingSignals: (profile.buyingSignals ?? []) as Array<{ name: string; detectionMethod?: string; why?: string; strength?: string }>,
+        disqualifiers: (profile.disqualifiers ?? []) as string[],
+        competitors: (profile.competitors ?? []) as string[],
+        segments: (profile.segments ?? []) as Array<{ name: string; titles?: string[]; industries?: string[]; sizes?: string[]; geos?: string[] }>,
+        negativeIcp: profile.negativeIcp as Record<string, unknown> | null,
+        confidence: (profile.confidence ?? { industry: 0.5, size: 0.5, title: 0.5, geo: 0.5, overall: 0.5 }) as { industry: number; size: number; title: number; geo: number; overall: number },
+      },
     };
   }),
 
