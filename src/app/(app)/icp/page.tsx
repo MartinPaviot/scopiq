@@ -82,7 +82,6 @@ export default function IcpPage() {
   const [editData, setEditData] = useState<Record<string, unknown> | null>(null);
 
   const icpQuery = trpc.icp.getActive.useQuery();
-  const apolloQuery = trpc.icp.getApolloPreview.useQuery();
   const workspaceQuery = trpc.workspace.getSettings.useQuery();
   const proposalsQuery = trpc.icp.getProposals.useQuery();
 
@@ -92,7 +91,6 @@ export default function IcpPage() {
       setEditing(false);
       setEditData(null);
       icpQuery.refetch();
-      apolloQuery.refetch();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -423,26 +421,6 @@ export default function IcpPage() {
           </div>
         )}
 
-        {/* Apollo Preview */}
-        {apolloQuery.data && (
-          <div className="border rounded-lg p-4 bg-muted/30">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Apollo Search Preview</h3>
-            <div className="grid md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <p className="font-medium text-muted-foreground mb-1">Organization Filters</p>
-                <pre className="text-[10px] bg-card p-2 rounded border overflow-auto max-h-32">
-                  {JSON.stringify(apolloQuery.data.orgFilters, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <p className="font-medium text-muted-foreground mb-1">People Filters</p>
-                <pre className="text-[10px] bg-card p-2 rounded border overflow-auto max-h-32">
-                  {JSON.stringify(apolloQuery.data.peopleFilters, null, 2)}
-                </pre>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
