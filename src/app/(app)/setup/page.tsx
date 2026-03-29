@@ -27,7 +27,7 @@ export default function SetupPage() {
     },
   });
 
-  const sources = sourcesQuery.data ?? [];
+  const sources = (sourcesQuery.data ?? []) as Array<{ type: string; status: string }>;
   const completedCount = sources.filter((s) => s.status === "complete").length;
   const hasWebsite = sources.some((s) => s.type === "website" && s.status === "complete");
 

@@ -1,7 +1,7 @@
+import { redirect } from "next/navigation";
+
 export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <h1 className="text-2xl font-semibold">Scopiq</h1>
-    </div>
-  );
+  // Middleware handles auth redirect. If we reach here, user is authenticated
+  // and middleware redirected to /market. This is a fallback.
+  redirect("/market");
 }

@@ -82,6 +82,81 @@ function CompanyIcon({ name, domain }: { name: string; domain?: string | null })
   );
 }
 
+// ─── Export Button ────────────────────────────────
+
+function ExportButton({ tamBuildId, tierFilter, search, totalFiltered }: {
+  tamBuildId: string; tierFilter: string[]; search: string; totalFiltered: number;
+}) {
+  const [exporting, setExporting] = useState(false);
+  const exportQuery = trpc.tam.exportAccounts.useQuery(
+    {
+      tamBuildId,
+      tier: tierFilter.length > 0 ? tierFilter : undefined,
+      search: search || undefined,
+      sortBy: "heatScore",
+      sortOrder: "desc" as const,
+    },
+    { enabled: exporting },
+  );
+
+  useEffect(() => {
+    if (exporting && exportQuery.data) {
+      const rows = exportQuery.data.accounts;
+      const csv = [
+        ["Name", "Domain", "Industry", "Employees", "Tier", "Heat", "Score", "Country", "City"].join(","),
+        ...rows.map((a: Record<string, unknown>) => [
+          `"${String(a.name ?? "").replace(/"/g, '""')}"`,
+          a.domain ?? "", `"${String(a.industry ?? "").replace(/"/g, '""')}"`,
+          a.employeeCount ?? "", a.tier ?? "", a.heat ?? "", a.heatScore ?? "",
+          `"${String(a.country ?? "").replace(/"/g, '""')}"`,
+          `"${String(a.city ?? "").replace(/"/g, '""')}"`,
+        ].join(",")),
+      ].join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `scopiq-tam-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setExporting(false);
+    }
+  }, [exporting, exportQuery.data]);
+
+  if (totalFiltered === 0) return null;
+
+  return (
+    <Button
+      variant="ghost" size="sm" className="text-xs h-7 gap-1 px-2 ml-auto"
+      disabled={exporting}
+      onClick={() => setExporting(true)}
+    >
+      {exporting ? <ArrowsClockwise className="size-3 animate-spin" /> : <Export className="size-3" />}
+      Export{totalFiltered > 50 ? ` ${totalFiltered}` : ""}
+    </Button>
+  );
+}
+
+// ─── Expand Market Button ─────────────────────────
+
+function ExpandButton({ tamBuildId }: { tamBuildId: string }) {
+  const loadMore = trpc.tam.loadMore.useMutation();
+
+  return (
+    <Button
+      variant="outline" size="sm" className="text-xs h-7 gap-1"
+      disabled={loadMore.isPending}
+      onClick={() => loadMore.mutate({ tamBuildId, pages: 10 })}
+    >
+      {loadMore.isPending ? (
+        <><ArrowsClockwise className="size-3 animate-spin" /> Expanding...</>
+      ) : (
+        <><CaretDown className="size-3" /> Expand market</>
+      )}
+    </Button>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────
 
 export default function MarketPage() {
@@ -228,10 +303,8 @@ export default function MarketPage() {
           {totalFiltered.toLocaleString()} accounts
         </span>
 
-        <Button variant="ghost" size="sm" className="text-xs h-7 gap-1 px-2 ml-auto">
-          <Export className="size-3" />
-          Export
-        </Button>
+        <ExportButton tamBuildId={tamBuildId!} tierFilter={tierFilter} search={search} totalFiltered={totalFiltered} />
+        <ExpandButton tamBuildId={tamBuildId!} />
       </div>
 
       {/* Table Header */}

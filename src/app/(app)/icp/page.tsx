@@ -77,6 +77,7 @@ export default function IcpPage() {
   const router = useRouter();
   const icpQuery = trpc.icp.getActive.useQuery();
   const apolloQuery = trpc.icp.getApolloPreview.useQuery();
+  const workspaceQuery = trpc.workspace.getSettings.useQuery();
   const tamMutation = trpc.tam.startBuild.useMutation({
     onSuccess: () => {
       toast.success("TAM build started!");
@@ -86,6 +87,7 @@ export default function IcpPage() {
   });
 
   const icp = icpQuery.data;
+  const companyUrl = workspaceQuery.data?.companyUrl ?? "";
 
   if (icpQuery.isLoading) {
     return (
@@ -134,10 +136,7 @@ export default function IcpPage() {
             <Button
               size="sm"
               className="gap-1.5"
-              onClick={() => {
-                const siteUrl = ""; // Will be read from workspace in the mutation
-                tamMutation.mutate({ siteUrl: siteUrl || "https://example.com" });
-              }}
+              onClick={() => tamMutation.mutate({ siteUrl: companyUrl || "https://example.com" })}
               disabled={tamMutation.isPending}
             >
               {tamMutation.isPending ? "Building..." : "Build TAM"}

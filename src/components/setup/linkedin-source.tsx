@@ -40,8 +40,9 @@ export function LinkedInSource({ type, title, description, placeholder, urlPatte
   const sourcesQuery = trpc.ingestion.getSources.useQuery(undefined, {
     enabled: status === "success",
   });
-  const source = sourcesQuery.data?.find((s) => s.type === type);
-  const structuredData = source?.structuredData as Record<string, string> | null;
+  const sources = sourcesQuery.data as Array<{ type: string; structuredData: Record<string, string> | null }> | undefined;
+  const source = sources?.find((s) => s.type === type);
+  const structuredData = source?.structuredData ?? null;
 
   const handleAnalyze = useCallback(() => {
     const trimmed = url.trim();
