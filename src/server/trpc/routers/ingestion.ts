@@ -140,10 +140,31 @@ export const ingestionRouter = router({
             data: { workspaceId: ctx.workspaceId, type: input.type, inputUrl: url, status: "processing" },
           });
 
-      // Scrape in-band (fast enough for single pages)
+      // Scrape via Jina, fallback to direct fetch
       try {
         const result = await scrapeViaJina(url);
-        if (!result.ok) {
+
+        let rawMarkdown = "";
+        if (result.ok) {
+          rawMarkdown = result.markdown;
+        } else {
+          // Fallback: direct HTML fetch for basic content
+          try {
+            const directRes = await fetch(url, {
+              headers: { "User-Agent": "Scopiq/1.0" },
+              signal: AbortSignal.timeout(8000),
+              redirect: "follow",
+            });
+            if (directRes.ok) {
+              const html = await directRes.text();
+              rawMarkdown = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 10000);
+            }
+          } catch {
+            // Both failed
+          }
+        }
+
+        if (!rawMarkdown && !result.ok) {
           await prisma.ingestionSource.update({
             where: { id: source.id },
             data: { status: "error", errorMessage: result.message },
@@ -154,26 +175,34 @@ export const ingestionRouter = router({
         let structuredData: Record<string, unknown> = {};
 
         if (input.type === "website") {
-          // Full CompanyDna extraction
-          const companyDna = await analyzeMarkdown(result.markdown, ctx.workspaceId);
-          structuredData = companyDna as Record<string, unknown>;
+          // Store markdown for later LLM analysis during ICP inference — no Mistral call here
+          structuredData = { url, markdownLength: rawMarkdown.length };
 
-          // Also update workspace companyDna
           await prisma.workspace.update({
             where: { id: ctx.workspaceId },
-            data: { companyUrl: url, companyDna: structuredData as unknown as Prisma.InputJsonValue },
+            data: { companyUrl: url },
           });
+
+          // Cache raw markdown
+          try {
+            const domain = new URL(url).hostname;
+            await prisma.companyCache.upsert({
+              where: { domain },
+              create: { domain, workspaceId: ctx.workspaceId, markdown: rawMarkdown },
+              update: { markdown: rawMarkdown, scrapedAt: new Date() },
+            });
+          } catch { /* non-critical */ }
         } else if (input.type === "linkedin_company") {
-          structuredData = extractLinkedInCompanyData(result.markdown);
+          structuredData = extractLinkedInCompanyData(rawMarkdown);
         } else if (input.type === "linkedin_profile") {
-          structuredData = extractLinkedInProfileData(result.markdown);
+          structuredData = extractLinkedInProfileData(rawMarkdown);
         }
 
         await prisma.ingestionSource.update({
           where: { id: source.id },
           data: {
             status: "complete",
-            rawContent: result.markdown,
+            rawContent: rawMarkdown || null,
             structuredData: structuredData as unknown as Prisma.InputJsonValue,
             completedAt: new Date(),
           },

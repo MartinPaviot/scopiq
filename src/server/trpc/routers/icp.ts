@@ -18,12 +18,37 @@ export const icpRouter = router({
       where: { workspaceId, status: "complete" },
     });
 
-    // Get CompanyDna from workspace (set by website source)
+    // Get CompanyDna from workspace + cached markdown from scrape
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { companyDna: true },
+      select: { companyDna: true, companyUrl: true },
     });
-    const companyDna = workspace?.companyDna as Record<string, unknown> | null;
+    let companyDna = workspace?.companyDna as Record<string, unknown> | null;
+
+    // If we have a cached website markdown but no rich CompanyDna yet,
+    // run the LLM analysis NOW (deferred from scrape step for reliability)
+    if (workspace?.companyUrl) {
+      try {
+        const domain = new URL(workspace.companyUrl).hostname;
+        const cache = await prisma.companyCache.findUnique({ where: { domain } });
+        if (cache?.markdown && cache.markdown.length > 100) {
+          const { analyzeMarkdown } = await import("@/server/lib/enrichment/company-analyzer");
+          const richDna = await analyzeMarkdown(cache.markdown, workspaceId);
+          companyDna = richDna as unknown as Record<string, unknown>;
+
+          // Update workspace with rich DNA
+          await prisma.workspace.update({
+            where: { id: workspaceId },
+            data: { companyDna: companyDna as unknown as Prisma.InputJsonValue },
+          });
+          logger.info("[icp.infer] CompanyDna enriched from cached markdown");
+        }
+      } catch (err) {
+        logger.warn("[icp.infer] LLM analysis failed, using basic DNA", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     // Get customer patterns from CSV imports
     const customerEntries = await prisma.customerImportEntry.findMany({
