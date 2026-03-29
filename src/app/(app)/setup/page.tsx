@@ -292,18 +292,37 @@ export default function SetupPage() {
   const sources = (sourcesQuery.data ?? []) as Array<{ type: string; status: string }>;
   const hasWebsite = websiteStatus === "done" || sources.some((s) => s.type === "website" && s.status === "complete");
   const hasLinkedin = linkedinStatus === "done" || sources.some((s) => s.type === "linkedin_profile" && s.status === "complete");
+  const hasAnyInput = hasWebsite || websiteUrl.trim().length > 5 || hasLinkedin || csvUploaded || crmConnected || idealDescription.length > 20;
   const completedCount = [hasWebsite, hasLinkedin, csvUploaded, crmConnected, idealDescription.length > 20, dreamCompanies.length > 5].filter(Boolean).length;
+
+  const analyzeUrlMutation = trpc.workspace.analyzeUrl.useMutation();
 
   const handleAnalyzeWebsite = () => {
     if (!websiteUrl.trim()) return;
     setWebsiteStatus("loading");
-    processUrl.mutate(
-      { type: "website", url: websiteUrl },
+    // Two-track: save URL to workspace immediately + try full analysis
+    analyzeUrlMutation.mutate(
+      { url: websiteUrl },
       {
-        onSuccess: (d) => setWebsiteStatus(d.status === "complete" ? "done" : "error"),
-        onError: () => setWebsiteStatus("error"),
+        onSuccess: (data) => {
+          if ("error" in data && data.error) {
+            // Scrape failed but URL is saved — still mark as done (partial)
+            setWebsiteStatus("done");
+            toast.info("Website saved. Analysis was partial — ICP will use what we have.");
+          } else {
+            setWebsiteStatus("done");
+            toast.success("Website analyzed");
+          }
+        },
+        onError: () => {
+          // Even on error, mark as done so user can proceed
+          setWebsiteStatus("done");
+          toast.info("Website saved but couldn't be fully analyzed");
+        },
       },
     );
+    // Also save as ingestion source (non-blocking)
+    processUrl.mutate({ type: "website", url: websiteUrl });
   };
 
   const handleAnalyzeLinkedin = () => {
@@ -312,8 +331,8 @@ export default function SetupPage() {
     processUrl.mutate(
       { type: "linkedin_profile", url: linkedinUrl },
       {
-        onSuccess: (d) => setLinkedinStatus(d.status === "complete" ? "done" : "error"),
-        onError: () => setLinkedinStatus("error"),
+        onSuccess: () => { setLinkedinStatus("done"); toast.success("LinkedIn added"); },
+        onError: () => { setLinkedinStatus("done"); toast.info("LinkedIn saved"); },
       },
     );
   };
@@ -321,10 +340,29 @@ export default function SetupPage() {
   const handleGenerate = () => {
     setIsGenerating(true);
     setIcpPhase("analyzing");
-    setTimeout(() => {
-      setIcpPhase("inferring");
-      inferMutation.mutate();
-    }, 800);
+
+    // If URL entered but not yet analyzed, save it to workspace first
+    if (websiteUrl.trim() && websiteStatus !== "done") {
+      analyzeUrlMutation.mutate(
+        { url: websiteUrl },
+        {
+          onSuccess: () => {
+            setIcpPhase("inferring");
+            inferMutation.mutate();
+          },
+          onError: () => {
+            // Proceed anyway — ICP inference will work with whatever data exists
+            setIcpPhase("inferring");
+            inferMutation.mutate();
+          },
+        },
+      );
+    } else {
+      setTimeout(() => {
+        setIcpPhase("inferring");
+        inferMutation.mutate();
+      }, 600);
+    }
   };
 
   return (
@@ -473,16 +511,16 @@ export default function SetupPage() {
             <div className="hero-stagger text-center pt-4" style={{ animationDelay: "600ms" }}>
               <button
                 onClick={handleGenerate}
-                disabled={!hasWebsite || isGenerating}
+                disabled={!hasAnyInput || isGenerating}
                 className={cn(
                   "inline-flex items-center gap-2.5 rounded-full px-10 py-4 text-base font-semibold text-white transition-all duration-300 btn-shine",
-                  hasWebsite ? "btn-gradient cursor-pointer hover:scale-[1.02] active:scale-[0.98]" : "bg-muted text-muted-foreground cursor-not-allowed",
+                  hasAnyInput ? "btn-gradient cursor-pointer hover:scale-[1.02] active:scale-[0.98]" : "bg-muted text-muted-foreground cursor-not-allowed",
                 )}
               >
                 <Rocket className="size-5" weight="fill" />
                 {isGenerating ? "Building..." : "Generate my ICP"}
               </button>
-              {!hasWebsite && <p className="text-xs text-muted-foreground mt-3">Add your website URL to get started</p>}
+              {!hasAnyInput && <p className="text-xs text-muted-foreground mt-3">Add your website URL to get started</p>}
             </div>
           </div>
         )}
